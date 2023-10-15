@@ -1,0 +1,20 @@
+[package]
+name = "nw-tex"
+description = "A tool to extract and rebuild Paper Mario: Sticker Star's localized texture archives"
+authors = ["Darxoon"]
+repository = "https://github.com/Darxoon/nw-tex"
+homepage = "https://darxoon.neocities.org/p/nw-tex"
+license = "Unlicense"
+readme = "readme.md"
+version = "1.0.0"
+edition = "2021"
+categories = ["command-line-utilities", "parsing", "data-structures", "game-development"]
+keywords = ["paper mario", "reverse engineering"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.72", features = ["backtrace"] }
+byteorder = "1.4.3"
+clap = { version = "4.3.15", features = ["derive"] }
+regex = "1.10.1"

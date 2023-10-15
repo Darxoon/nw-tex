@@ -14,17 +14,17 @@ With this file, you can extract its contents like this:
 
 (command above used in a command line, e.g., Command Prompt)
 
-The program will extract a table of all files from the archive into a similarly named file ending on `_tex.yaml` and the actual files in the archive into the folder with the same name as this. (You can also determine the place where these will be placed and under which name by adding `--output <output file ending on .yaml` to the command).
+The program will extract a table of all files from the archive into a similarly named file ending on `_tex.yaml` and the actual files in the archive into the folder with the same name as this. (You can also determine the place where these will be placed and under which name by adding `--output <output file ending on .yaml>` to the command).
 
 Always make sure that next to the file you are passing in as input, there exists a similarly named file who's file name ends on `_info`, for example, `EUR_en_info.bin`. The program will find this file automatically, **but make sure to not separate the two files or rename just one of them**.
 
-Now you can use the files in `XXX_xx_tex/` (whatever name of the input file you chose) like you do with any other .bcrez file in the game. If you do not know what to do with them, you can check out [this tutorial by Hunter Xuman](https://gamebanana.com/tuts/15568).
+Now you can use the files inside the folder this program added, `XXX_xx_tex/` (whatever name of the input file you chose), like you do with any other .bcrez file in the game. If you do not know what to do with them, you can check out [this tutorial by Hunter Xuman](https://gamebanana.com/tuts/15568).
 
 To rebuild the archive back into its original two files (WHICH IS CURRENTLY NOT SUPPORTED YET!), you can run
 
     nw-tex rebuild <name of file ending on [...]_tex.yaml> --output <name of new .bin file>
 
-Make sure to pass a name to `--output` that is not the file name of the original file, so you do not overwrite it, in case you want to it again.
+Make sure to pass a name to `--output` that is not the file name of the original file, so you do not overwrite it, in case you want use the original again.
 
 ## Installation
 

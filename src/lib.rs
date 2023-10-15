@@ -1,6 +1,6 @@
 use std::{io::{Cursor, Read}, str::from_utf8, fmt::Write};
 
-use anyhow::{Result, Error};
+use anyhow::Result;
 use byteorder::{ReadBytesExt, LittleEndian};
 use util::pointer::Pointer;
 
@@ -23,7 +23,7 @@ pub struct RegistryItem {
 	pub id: String,
 	pub file_offset: u32,
 	pub field_0x8: u32,
-	pub field_0xc: u32,
+	pub byte_length: u32,
 }
 
 impl RegistryItem {
@@ -32,7 +32,7 @@ impl RegistryItem {
 			.unwrap_or(Pointer::default());
 		let file_offset = reader.read_u32::<LittleEndian>()?;
 		let field_0x8 = reader.read_u32::<LittleEndian>()?;
-		let field_0xc = reader.read_u32::<LittleEndian>()?;
+		let byte_length = reader.read_u32::<LittleEndian>()?;
         
 		let id = get_string(id_pointer + 0x1e64)?;
 		
@@ -40,7 +40,7 @@ impl RegistryItem {
 			id,
 			file_offset,
 			field_0x8,
-			field_0xc,
+			byte_length,
 		})
 	}
 }
@@ -57,7 +57,7 @@ impl CgfxFileRegistry {
 		let item_count = cursor.read_u32::<LittleEndian>()?;
 		let mut items = Vec::default();
 		
-		for i in 0..item_count {
+		for _ in 0..item_count {
 			items.push(RegistryItem::read(&mut cursor, &get_string)?);
 		}
 		
@@ -70,8 +70,8 @@ impl CgfxFileRegistry {
 		let mut output = "---\n".to_owned();
 		
 		for item in &self.items {
-			write!(output, "- id: {}\n  file_offset: {}\n  field_0x8: {}\n  field_0xc: {}\n",
-				item.id, item.file_offset, item.field_0x8, item.field_0xc)?;
+			write!(output, "- id: {}\n  file_offset: {}\n  field_0x8: {}\n  byte_length: {}\n",
+				item.id, item.file_offset, item.field_0x8, item.byte_length)?;
 		}
 		
 		Ok(output)

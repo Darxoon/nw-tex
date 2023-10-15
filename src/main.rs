@@ -33,6 +33,12 @@ struct Args {
     #[arg(short, long, verbatim_doc_comment)]
     output: Option<String>,
     
+    /// When the method is 'extract' and this flag is set, it will overwrite everything in the output
+    /// directory (e.g. 'EUR_en_tex/') that is already present. Otherwise, the program will cancel
+    /// if the output directory exists and contains files already.
+    #[arg(short, long, verbatim_doc_comment)]
+    clean: bool,
+    
     /// Print app version
     #[arg(short, long, action = ArgAction::Version)]
     version: Option<bool>,
@@ -46,7 +52,7 @@ struct Args {
     help: Option<bool>,
 }
 
-fn get_input_sibling_path(input: &Path, new_file_ending: &str) -> Result<PathBuf> {
+fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: &str) -> Result<PathBuf> {
     let mut path_buf = input.parent()
         .ok_or_else(|| Error::msg("Could not find containing directory of input file."))?
         .to_owned();
@@ -56,7 +62,7 @@ fn get_input_sibling_path(input: &Path, new_file_ending: &str) -> Result<PathBuf
         .to_str()
         .ok_or_else(|| Error::msg("Input file name contains invalid (not utf8) characters."))?;
     
-    let mut output_file_name = if input_file_name.ends_with(".bin") {
+    let mut output_file_name = if input_file_name.ends_with(old_file_ending) {
         input_file_name[..input_file_name.len() - 4].to_owned()
     } else {
         input_file_name.to_owned()
@@ -68,16 +74,25 @@ fn get_input_sibling_path(input: &Path, new_file_ending: &str) -> Result<PathBuf
     Ok(path_buf)
 }
 
-fn disassemble(input: PathBuf, opt_output: Option<String>) -> Result<()> {
-    let secondary_input = get_input_sibling_path(&input, "_info.bin")?;
+fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool) -> Result<()> {
+    let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
-    let output_name = match opt_output {
+    let output_file_name = match &opt_output {
         Some(path) => PathBuf::from(path),
-        None => get_input_sibling_path(&input, "_tex.yaml")?,
+        None => get_input_sibling_path(&input, ".bin", "_tex.yaml")?,
+    };
+    
+    let output_dir_name = match &opt_output {
+        Some(path) => get_input_sibling_path(&Path::new(path), ".yaml", "")?,
+        None => get_input_sibling_path(&input, ".bin", "_tex")?
     };
     
     println!("secondary input path: {}", secondary_input.display());
-    println!("disasm output path: {}", output_name.display());
+    println!("disasm output path: {}", output_file_name.display());
+    
+    let input_file_buf = fs::read(&input)
+        .expect(&format!("Could not open input file {}. \
+Make sure that it exists and can be accessed with the current permissions.", input.display()));
     
     let secondary_file_buf = fs::read(&secondary_input)
         .expect(&format!("Could not open file {}. Make sure `input` has an adjacent \
@@ -85,7 +100,33 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
     
     let registry = CgfxFileRegistry::new(&secondary_file_buf)?;
     
-    fs::write(output_name, registry.to_yaml()?)?;
+    // require --clean if `output_dir_name` contains files already
+    if !clean_out_dir && output_dir_name.is_dir() {
+        let output_dir_children: Vec<_> = fs::read_dir(&output_dir_name)?.collect();
+        
+        if output_dir_children.len() > 0 {
+            return Err(Error::msg(format!("\
+The output directory {} contains items. If you want to overwrite them, \
+run the program with the --clean option. Until then, aborting.", output_dir_name.display())));
+        }
+    }
+    
+    fs::write(output_file_name, registry.to_yaml()?)?;
+    
+    if clean_out_dir && output_dir_name.is_dir() {
+        fs::remove_dir_all(&output_dir_name)?;
+    }
+    
+    fs::create_dir_all(&output_dir_name)?;
+    
+    for item in registry.items {
+        let start_offset: usize = item.file_offset.try_into().unwrap();
+        let end_offset: usize = (item.file_offset + item.byte_length).try_into().unwrap();
+        let file_name = output_dir_name.join(item.id + ".bcrez");
+        
+        let file_content = &input_file_buf[start_offset..end_offset];
+        fs::write(file_name, file_content)?;
+    }
     
     Ok(())
 }
@@ -98,7 +139,7 @@ fn main() -> Result<()> {
     let output = args.output;
     
     match args.method {
-        Method::Extract => disassemble(input, output)?,
+        Method::Extract => disassemble(input, output, args.clean)?,
         Method::Rebuild => todo!(),
     }
     

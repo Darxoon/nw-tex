@@ -1,7 +1,11 @@
-use std::{io::{Cursor, Read}, str::from_utf8, fmt::Write};
+use std::{
+    io::{Cursor, Read},
+    str::from_utf8,
+};
 
 use anyhow::Result;
-use byteorder::{ReadBytesExt, LittleEndian};
+use byteorder::{LittleEndian, ReadBytesExt};
+use serde::{Deserialize, Serialize};
 use util::pointer::Pointer;
 
 pub mod util;
@@ -19,6 +23,7 @@ fn get_string(bytes: &[u8], start: Pointer) -> Result<String> {
 	Ok(string.to_owned())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryItem {
 	pub id: String,
 	pub file_offset: u32,
@@ -61,19 +66,16 @@ impl CgfxFileRegistry {
 			items.push(RegistryItem::read(&mut cursor, &get_string)?);
 		}
 		
-		Ok(CgfxFileRegistry {
-			items,
-		})
+        Ok(CgfxFileRegistry { items })
 	}
 	
 	pub fn to_yaml(&self) -> Result<String> {
-		let mut output = "---\n".to_owned();
-		
-		for item in &self.items {
-			write!(output, "- id: {}\n  file_offset: {}\n  field_0x8: {}\n  byte_length: {}\n",
-				item.id, item.file_offset, item.field_0x8, item.byte_length)?;
-		}
-		
-		Ok(output)
+		let yaml = serde_yaml::to_string(&self.items)?;
+		Ok(yaml)
+	}
+	
+	pub fn from_yaml(yaml: &str) -> Result<Self> {
+		let items: Vec<RegistryItem> = serde_yaml::from_str(yaml)?;
+		Ok(CgfxFileRegistry { items })
 	}
 }

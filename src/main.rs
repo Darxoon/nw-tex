@@ -1,8 +1,12 @@
-use std::{path::{Path, PathBuf}, fs};
+use std::{
+    ffi::OsStr,
+    fs, io,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{Result, Error};
-use clap::{Parser, ValueEnum, ArgAction};
-use nw_tex::CgfxFileRegistry;
+use anyhow::{Error, Result};
+use clap::{ArgAction, Parser, ValueEnum};
+use nw_tex::{CgfxFileRegistry, RegistryItem};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Method {
@@ -28,8 +32,15 @@ struct Args {
     #[arg(verbatim_doc_comment)]
     input: String,
     
-    /// The output file. If input is a KDM file, output should be '*.kersti' and if it is a Kersti file, it should be a KDM file.
-    /// Will be inferred by the input file by default but can be set manually like this.
+    /// The output file. If left blank, it will be inferred from the input.
+    /// 
+    /// If method is `extract`, then the output will need to end on `_tex.yaml`.
+    /// There is going to be a folder with the same name but without the file extension.
+    /// 
+    /// If method is `rebuild`, then the output is going to be a .bin file.
+    /// The secondary output, ending on _info.bin, will be placed next to this file.
+    /// 
+    /// Examples: (extract) EUR_en_tex.yaml, EUR_de_tex.yaml (rebuild) EUR_en.bin, EUR_it.bin
     #[arg(short, long, verbatim_doc_comment)]
     output: Option<String>,
     
@@ -63,7 +74,7 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
         .ok_or_else(|| Error::msg("Input file name contains invalid (not utf8) characters."))?;
     
     let mut output_file_name = if input_file_name.ends_with(old_file_ending) {
-        input_file_name[..input_file_name.len() - 4].to_owned()
+        input_file_name[..input_file_name.len() - old_file_ending.len()].to_owned()
     } else {
         input_file_name.to_owned()
     };
@@ -77,6 +88,13 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
 fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool) -> Result<()> {
     let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
+    // print warning if output is set but doesn't end on _tex.yaml
+    if let Some(output) = &opt_output {
+        if !output.ends_with("_tex.yaml") {
+            eprintln!("Warning: output path {:?} does not end on '_tex.yaml'.", output)
+        }
+    }
+    
     let output_file_name = match &opt_output {
         Some(path) => PathBuf::from(path),
         None => get_input_sibling_path(&input, ".bin", "_tex.yaml")?,
@@ -84,12 +102,10 @@ fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool) 
     
     let output_dir_name = match &opt_output {
         Some(path) => get_input_sibling_path(&Path::new(path), ".yaml", "")?,
-        None => get_input_sibling_path(&input, ".bin", "_tex")?
+        None => get_input_sibling_path(&input, ".bin", "_tex")?,
     };
     
-    println!("secondary input path: {}", secondary_input.display());
-    println!("disasm output path: {}", output_file_name.display());
-    
+    // read input files
     let input_file_buf = fs::read(&input)
         .expect(&format!("Could not open input file {}. \
 Make sure that it exists and can be accessed with the current permissions.", input.display()));
@@ -98,6 +114,7 @@ Make sure that it exists and can be accessed with the current permissions.", inp
         .expect(&format!("Could not open file {}. Make sure `input` has an adjacent \
 file with the same name but ending on '_info.bin' rather than '.bin'", secondary_input.display()));
     
+    // parse files
     let registry = CgfxFileRegistry::new(&secondary_file_buf)?;
     
     // require --clean if `output_dir_name` contains files already
@@ -111,6 +128,7 @@ run the program with the --clean option. Until then, aborting.", output_dir_name
         }
     }
     
+    // write output files
     fs::write(output_file_name, registry.to_yaml()?)?;
     
     if clean_out_dir && output_dir_name.is_dir() {
@@ -131,6 +149,61 @@ run the program with the --clean option. Until then, aborting.", output_dir_name
     Ok(())
 }
 
+fn rebuild(input: PathBuf, opt_output: Option<String>) -> Result<()> {
+    // get adjacent input folder
+    let input_folder_name = input.with_extension("");
+    
+    let output_file_name = match &opt_output {
+        Some(path) => PathBuf::from(path),
+        None => {
+            let input_bytes = input.as_os_str().as_encoded_bytes();
+            
+            if input_bytes.ends_with(OsStr::new("_tex.yaml").as_encoded_bytes()) {
+                get_input_sibling_path(&input, "_tex.yaml", ".bin")?
+            } else {
+                input.with_extension("")
+            }
+        },
+    };
+    
+    let secondary_output_file_name =
+        get_input_sibling_path(&output_file_name, ".bin", "_info.bin")?;
+    
+    println!("input folder: {:?}", input_folder_name);
+    println!("output file: {:?}", output_file_name);
+    println!("secondary output file: {:?}", secondary_output_file_name);
+    
+    let input_string = fs::read_to_string(input)?;
+    
+    let registry = CgfxFileRegistry::from_yaml(&input_string)?;
+    
+    // read files to be written in archive
+    let read_bcrez = |item: &RegistryItem| {
+        fs::read(input_folder_name.join(&item.id).with_extension("bcrez"))
+    };
+    
+    let archived_files_result: io::Result<Vec<Vec<u8>>> = registry.items.iter().map(read_bcrez).collect();
+    
+    let archived_files = archived_files_result?;
+
+    // write archive file
+    let mut archived_file_indices: Vec<usize> = Vec::new();
+    let mut archive_buffer: Vec<u8> = Vec::new();
+    
+    for file_buf in archived_files {
+        archived_file_indices.push(archive_buffer.len());
+        archive_buffer.extend(file_buf);
+    }
+    
+    fs::write(output_file_name, archive_buffer)?;
+    
+    // write archive info file
+    // fs::write(secondary_output_file_name, )?;
+    todo!();
+    
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     println!("{:?}\n", args);
@@ -139,9 +212,7 @@ fn main() -> Result<()> {
     let output = args.output;
     
     match args.method {
-        Method::Extract => disassemble(input, output, args.clean)?,
-        Method::Rebuild => todo!(),
+        Method::Extract => disassemble(input, output, args.clean),
+        Method::Rebuild => rebuild(input, output),
     }
-    
-    Ok(())
 }

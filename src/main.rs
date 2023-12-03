@@ -7,6 +7,7 @@ use std::{
 use anyhow::{Error, Result};
 use clap::{ArgAction, Parser, ValueEnum};
 use nw_tex::{CgfxFileRegistry, RegistryItem};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Method {
@@ -182,7 +183,7 @@ fn rebuild(input: PathBuf, opt_output: Option<String>) -> Result<()> {
         fs::read(input_folder_name.join(&item.id).with_extension("bcrez"))
     };
     
-    let archived_files_result: io::Result<Vec<Vec<u8>>> = registry.items.iter().map(read_bcrez).collect();
+    let archived_files_result: io::Result<Vec<Vec<u8>>> = registry.items.par_iter().map(read_bcrez).collect();
     
     let archived_files = archived_files_result?;
 
@@ -196,10 +197,7 @@ fn rebuild(input: PathBuf, opt_output: Option<String>) -> Result<()> {
     }
     
     fs::write(output_file_name, archive_buffer)?;
-    
-    // write archive info file
-    // fs::write(secondary_output_file_name, )?;
-    todo!();
+    fs::write(secondary_output_file_name, registry.to_buffer()?)?;
     
     Ok(())
 }

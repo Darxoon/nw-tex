@@ -17,5 +17,6 @@ keywords = ["paper mario", "reverse engineering"]
 anyhow = { version = "1.0.72", features = ["backtrace"] }
 byteorder = "1.4.3"
 clap = { version = "4.3.15", features = ["derive"] }
+rayon = "1.8.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }
 serde_yaml = "0.9.27"

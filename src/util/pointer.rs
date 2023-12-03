@@ -1,7 +1,7 @@
-use std::{io::Read, fmt::Debug, ops::{Add, Sub}};
+use std::{io::{Read, Write}, fmt::Debug, ops::{Add, Sub}};
 
 use anyhow::Result;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 macro_rules! from_type {
 	($t:ident, $from:ty) => {
@@ -88,6 +88,11 @@ impl Pointer {
         } else {
             Ok(None)
         }
+	}
+	
+	pub fn write(&self, writer: &mut impl Write) -> Result<()> {
+		writer.write_u32::<LittleEndian>(self.0)?;
+		Ok(())
 	}
 }
 

@@ -1,10 +1,10 @@
 use std::{
-    io::{Cursor, Read},
+    io::{Cursor, Read, Write},
     str::from_utf8,
 };
 
 use anyhow::Result;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 use util::pointer::Pointer;
 
@@ -39,6 +39,7 @@ impl RegistryItem {
 		let field_0x8 = reader.read_u32::<LittleEndian>()?;
 		let byte_length = reader.read_u32::<LittleEndian>()?;
         
+		// TODO: dangerous magic number
 		let id = get_string(id_pointer + 0x1e64)?;
 		
 		Ok(Self {
@@ -47,6 +48,17 @@ impl RegistryItem {
 			field_0x8,
 			byte_length,
 		})
+	}
+	
+	pub fn write(&self, writer: &mut impl Write, write_string: &mut impl FnMut(&str) -> Pointer) -> Result<()> {
+		let id_pointer = write_string(&self.id);
+		id_pointer.write(writer)?;
+		
+		writer.write_u32::<LittleEndian>(self.file_offset)?;
+		writer.write_u32::<LittleEndian>(self.field_0x8)?;
+		writer.write_u32::<LittleEndian>(self.byte_length)?;
+		
+		Ok(())
 	}
 }
 
@@ -67,6 +79,30 @@ impl CgfxFileRegistry {
 		}
 		
         Ok(CgfxFileRegistry { items })
+	}
+	
+	pub fn to_buffer(&self) -> Result<Vec<u8>> {
+		let mut main_buffer: Vec<u8> = Vec::new();
+		let mut string_buffer: Vec<u8> = Vec::new();
+		
+		let mut write_string = |string: &str| {
+			let current_offset = Pointer(string_buffer.len().try_into().unwrap());
+			
+			string_buffer.extend(string.bytes());
+			string_buffer.extend([0].iter());
+			
+			current_offset
+		};
+		
+		main_buffer.write_u32::<LittleEndian>(self.items.len().try_into().unwrap())?;
+		
+		for item in &self.items {
+			item.write(&mut main_buffer, &mut write_string)?;
+		}
+		
+		main_buffer.extend(string_buffer);
+		
+		Ok(main_buffer)
 	}
 	
 	pub fn to_yaml(&self) -> Result<String> {

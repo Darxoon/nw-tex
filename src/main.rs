@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    fs, io,
+    fs, io, panic,
     path::{Path, PathBuf},
 };
 
@@ -51,6 +51,16 @@ struct Args {
     #[arg(short, long, verbatim_doc_comment)]
     clean: bool,
     
+    /// Whether to decompress and recompress the archived resources with BLZ (Bottom LZ) compression.
+    /// 
+    /// Will output and read the files as `bcres`, rather than `bcrez`, to indicate the that files are
+    /// uncompressed with this option turned on.
+    /// 
+    /// NOTE:
+    /// Recompression is not supported yet.
+    #[arg(short, long, verbatim_doc_comment)]
+    blz: bool,
+    
     /// Print app version
     #[arg(short, long, action = ArgAction::Version)]
     version: Option<bool>,
@@ -86,7 +96,7 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool) -> Result<()> {
+fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, _decompress: bool) -> Result<()> {
     let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
     // print warning if output is set but doesn't end on _tex.yaml
@@ -108,11 +118,11 @@ fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool) 
     
     // read input files
     let input_file_buf = fs::read(&input)
-        .expect(&format!("Could not open input file {}. \
+        .expect(&format!("Could not open input file \"{}\". \
 Make sure that it exists and can be accessed with the current permissions.", input.display()));
     
     let secondary_file_buf = fs::read(&secondary_input)
-        .expect(&format!("Could not open file {}. Make sure `input` has an adjacent \
+        .expect(&format!("Could not open file \"{}\". Make sure `input` has an adjacent \
 file with the same name but ending on '_info.bin' rather than '.bin'", secondary_input.display()));
     
     // parse files
@@ -124,7 +134,7 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
         
         if output_dir_children.len() > 0 {
             return Err(Error::msg(format!("\
-The output directory {} contains items. If you want to overwrite them, \
+The output directory \"{}\" contains items. If you want to overwrite them, \
 run the program with the --clean option. Until then, aborting.", output_dir_name.display())));
         }
     }
@@ -150,7 +160,9 @@ run the program with the --clean option. Until then, aborting.", output_dir_name
     Ok(())
 }
 
-fn rebuild(input: PathBuf, opt_output: Option<String>) -> Result<()> {
+fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result<()> {
+    assert!(!compress, "Recompression is not supported yet!");
+    
     // get adjacent input folder
     let input_folder_name = input.with_extension("");
     
@@ -204,13 +216,20 @@ fn rebuild(input: PathBuf, opt_output: Option<String>) -> Result<()> {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    println!("{:?}\n", args);
+    
+    if cfg!(debug_assertions) {
+        println!("{:?}\n", args);
+    } else {
+        panic::set_hook(Box::new(|info| {
+            println!("{}", info.to_string());
+        }));
+    }
     
     let input = Path::new(&args.input).to_owned();
     let output = args.output;
     
     match args.method {
-        Method::Extract => disassemble(input, output, args.clean),
-        Method::Rebuild => rebuild(input, output),
+        Method::Extract => disassemble(input, output, args.clean, args.blz),
+        Method::Rebuild => rebuild(input, output, args.blz),
     }
 }

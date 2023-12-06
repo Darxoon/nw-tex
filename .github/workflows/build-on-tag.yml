@@ -1,0 +1,28 @@
+name: Rust
+
+on:
+  push:
+    tags:
+      - '*'
+  pull_request:
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: List installed build targets
+      run: rustup target list
+    - name: Build Linux Release
+      run: cargo build --release --verbose
+    - name: Upload linux binary
+      uses: actions/upload-artifact@v3.1.3
+      with:
+        name: nw-tex
+        path: ./target/release/nw-tex

@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Error, Result};
 use clap::{ArgAction, Parser, ValueEnum};
-use nw_tex::{CgfxFileRegistry, RegistryItem};
+use nw_tex::{util::blz::blz_decode, CgfxFileRegistry, RegistryItem};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -96,7 +96,7 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, _decompress: bool) -> Result<()> {
+fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, decompress: bool) -> Result<()> {
     let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
     // print warning if output is set but doesn't end on _tex.yaml
@@ -148,13 +148,20 @@ run the program with the --clean option. Until then, aborting.", output_dir_name
     
     fs::create_dir_all(&output_dir_name)?;
     
+    let resource_file_extension = if decompress { ".bcres" } else { ".bcrez" };
+    
     for item in registry.items {
         let start_offset: usize = item.file_offset.try_into().unwrap();
         let end_offset: usize = (item.file_offset + item.byte_length).try_into().unwrap();
-        let file_name = output_dir_name.join(item.id + ".bcrez");
+        let file_name = output_dir_name.join(item.id + resource_file_extension);
         
         let file_content = &input_file_buf[start_offset..end_offset];
-        fs::write(file_name, file_content)?;
+        
+        if decompress {
+            fs::write(file_name, blz_decode(file_content)?)?;
+        } else {
+            fs::write(file_name, file_content)?;
+        }
     }
     
     Ok(())

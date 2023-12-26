@@ -6,7 +6,7 @@ repository = "https://github.com/Darxoon/nw-tex"
 homepage = "https://darxoon.neocities.org/p/nw-tex"
 license = "Unlicense"
 readme = "readme.md"
-version = "1.0.0"
+version = "1.2.0"
 edition = "2021"
 categories = ["command-line-utilities", "parsing", "data-structures", "game-development"]
 keywords = ["paper mario", "reverse engineering"]
@@ -17,6 +17,8 @@ keywords = ["paper mario", "reverse engineering"]
 anyhow = { version = "1.0.72", features = ["backtrace"] }
 byteorder = "1.4.3"
 clap = { version = "4.3.15", features = ["derive"] }
+md5 = { version = "0.7.0" }
 rayon = "1.8.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }
+serde-binary = "0.5.0"
 serde_yaml = "0.9.27"

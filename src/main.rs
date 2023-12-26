@@ -1,13 +1,19 @@
 use std::{
     ffi::OsStr,
-    fs, io, panic,
+    fs, panic,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Error, Result};
 use clap::{ArgAction, Parser, ValueEnum};
-use nw_tex::{util::blz::blz_decode, CgfxFileRegistry, RegistryItem};
+use compression_cache::{CachedFile, CompressionCache};
+use nw_tex::{
+    util::blz::{blz_decode, blz_encode},
+    CgfxFileRegistry, RegistryItem,
+};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+mod compression_cache;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Method {
@@ -96,7 +102,7 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn disassemble(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, decompress: bool) -> Result<()> {
+fn extract(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, decompress: bool) -> Result<()> {
     let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
     // print warning if output is set but doesn't end on _tex.yaml
@@ -134,13 +140,14 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
         
         if output_dir_children.len() > 0 {
             return Err(Error::msg(format!("\
-The output directory \"{}\" contains items. If you want to overwrite them, \
-run the program with the --clean option. Until then, aborting.", output_dir_name.display())));
+                The output directory \"{}\" contains items. If you want to overwrite them, \
+                run the program with the --clean option.", output_dir_name.display()
+            )));
         }
     }
     
     // write output files
-    fs::write(output_file_name, registry.to_yaml()?)?;
+    fs::write(&output_file_name, registry.to_yaml()?)?;
     
     if clean_out_dir && output_dir_name.is_dir() {
         fs::remove_dir_all(&output_dir_name)?;
@@ -149,29 +156,44 @@ run the program with the --clean option. Until then, aborting.", output_dir_name
     fs::create_dir_all(&output_dir_name)?;
     
     let resource_file_extension = if decompress { ".bcres" } else { ".bcrez" };
+    let mut compression_cache = if decompress { Some(CompressionCache::new())} else { None };
     
     for item in registry.items {
         let start_offset: usize = item.file_offset.try_into().unwrap();
         let end_offset: usize = (item.file_offset + item.byte_length).try_into().unwrap();
-        let file_name = output_dir_name.join(item.id + resource_file_extension);
+        let file_name = output_dir_name.join(item.id.clone() + resource_file_extension);
         
         let file_content = &input_file_buf[start_offset..end_offset];
         
         if decompress {
-            fs::write(file_name, blz_decode(file_content)?)?;
+            let decompressed = blz_decode(file_content)?;
+            let decompressed_hash = md5::compute(&decompressed);
+            
+            fs::write(file_name, decompressed)?;
+            
+            let cached_files = &mut compression_cache.as_mut().unwrap().files;
+            cached_files.push(CachedFile {
+                name: item.id,
+                decompressed_file_hash: decompressed_hash.0,
+                compressed_content: file_content.to_owned(),
+            });
         } else {
             fs::write(file_name, file_content)?;
         }
+    }
+    
+    if let Some(compression_cache) = compression_cache {
+        fs::write(output_file_name.with_extension("cache"), compression_cache.to_buffer()?)?;
     }
     
     Ok(())
 }
 
 fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result<()> {
-    assert!(!compress, "Recompression is not supported yet!");
-    
     // get adjacent input folder
     let input_folder_name = input.with_extension("");
+    
+    let input_cache_name = input.with_extension("cache");
     
     let output_file_name = match &opt_output {
         Some(path) => PathBuf::from(path),
@@ -181,7 +203,7 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result
             if input_bytes.ends_with(OsStr::new("_tex.yaml").as_encoded_bytes()) {
                 get_input_sibling_path(&input, "_tex.yaml", ".bin")?
             } else {
-                input.with_extension("")
+                input.with_extension("bin")
             }
         },
     };
@@ -189,20 +211,56 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result
     let secondary_output_file_name =
         get_input_sibling_path(&output_file_name, ".bin", "_info.bin")?;
     
-    println!("input folder: {:?}", input_folder_name);
-    println!("output file: {:?}", output_file_name);
-    println!("secondary output file: {:?}", secondary_output_file_name);
-    
     let input_string = fs::read_to_string(input)?;
     
     let registry = CgfxFileRegistry::from_yaml(&input_string)?;
     
-    // read files to be written in archive
-    let read_bcrez = |item: &RegistryItem| {
-        fs::read(input_folder_name.join(&item.id).with_extension("bcrez"))
+    // read compression cache
+    let compression_cache = if compress {
+        let buffer = fs::read(input_cache_name)
+            .or_else(|_| Err(Error::msg(
+                "Cache file could not be read, make sure it exists and can be accessed.\n\
+                Make sure that you extracted the archive with compression turned on (enable --blz flag during extraction) \
+                and that you did not move or delete the [...].cache file."
+            )))?;
+        
+        Some(CompressionCache::from_buffer(&buffer)?)
+    } else {
+        None
     };
     
-    let archived_files_result: io::Result<Vec<Vec<u8>>> = registry.items.par_iter().map(read_bcrez).collect();
+    // read files to be written in archive
+    let file_extension = if compress { "bcres" } else { "bcrez" };
+    
+    let read_bcrez = |item: &RegistryItem| {
+        let input_path = input_folder_name.join(&item.id).with_extension(file_extension);
+        
+        let mut buffer = fs::read(&input_path)
+            .or_else(|_| Err(Error::msg(format!(
+                "File {:?} could not be read. Make sure that the file exists and can be accessed.\n\
+                Did you extract the archive with decompression turned {} too? (enable --blz flag during extraction)",
+                &input_path, if compress { "on" } else { "off" }
+            ))))?;
+        
+        if compress {
+            let cache_item = compression_cache.as_ref().unwrap().files.iter()
+                .find(|file| file.name == item.id)
+                .unwrap();
+            
+            let hash = md5::compute(&buffer);
+            
+            if cache_item.decompressed_file_hash == hash.0 {
+                Ok(cache_item.compressed_content.clone())
+            } else {
+                println!("Encoding {:?}", item.id);
+                blz_encode(&mut buffer)
+            }
+        } else {
+            Ok(buffer)
+        }
+    };
+    
+    let archived_files_result: Result<Vec<Vec<u8>>> = registry.items.par_iter().map(read_bcrez).collect();
     
     let archived_files = archived_files_result?;
 
@@ -236,7 +294,7 @@ fn main() -> Result<()> {
     let output = args.output;
     
     match args.method {
-        Method::Extract => disassemble(input, output, args.clean, args.blz),
+        Method::Extract => extract(input, output, args.clean, args.blz),
         Method::Rebuild => rebuild(input, output, args.blz),
     }
 }

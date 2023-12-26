@@ -133,8 +133,8 @@ pub fn blz_decode(input_buffer: &[u8]) -> Result<Vec<u8>> {
     Ok(result_buffer)
 }
 
-/// Mutates input_buffer for efficiency reasons but in the end leaves it
-/// in the same state that it was before calling this function.
+/// Mutates input_buffer for efficiency but in the end leaves it
+/// in the same state that it was in before calling this function.
 pub fn blz_encode(input_buffer: &mut [u8]) -> Result<Vec<u8>> {
     // weird calculation that I don't really understand
     let mut result_buffer: Vec<u8> = Vec::with_capacity(input_buffer.len() + (input_buffer.len() + 7) / 8 + 11);
@@ -207,8 +207,6 @@ pub fn blz_encode(input_buffer: &mut [u8]) -> Result<Vec<u8>> {
     }
     
     input_buffer.reverse();
-    // TODO: remember to reactivate
-    // result_buffer.reverse();
     
     let input_length: u32 = input_buffer.len().try_into().unwrap();
     

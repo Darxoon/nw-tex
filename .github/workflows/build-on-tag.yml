@@ -16,17 +16,25 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      
+      # configuration
+    - name: Install MinGW for windows builds
+      run: sudo apt install binutils-mingw-w64
     - name: Add Windows build target
       run: rustup target add x86_64-pc-windows-gnu
+      
+      # linux
     - name: Build Linux Release
       run: cargo build --release
-    - name: Build Windows Release
-      run: cargo build --release --target x86_64-pc-windows-gnu
     - name: Upload linux binary
       uses: actions/upload-artifact@v3.1.3
       with:
         name: nw-tex
         path: ./target/release/nw-tex
+        
+      # windows
+    - name: Build Windows Release
+      run: cargo build --release --target x86_64-pc-windows-gnu
     - name: Upload Windows binary
       uses: actions/upload-artifact@v3.1.3
       with:

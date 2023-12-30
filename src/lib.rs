@@ -62,11 +62,11 @@ impl RegistryItem {
 	}
 }
 
-pub struct CgfxFileRegistry {
+pub struct ArchiveRegistry {
 	pub items: Vec<RegistryItem>,
 }
 
-impl CgfxFileRegistry {
+impl ArchiveRegistry {
 	pub fn new(buffer: &[u8]) -> Result<Self> {
 		let get_string = |ptr| get_string(buffer, ptr);
 		let mut cursor = Cursor::new(buffer);
@@ -78,7 +78,7 @@ impl CgfxFileRegistry {
 			items.push(RegistryItem::read(&mut cursor, &get_string)?);
 		}
 		
-        Ok(CgfxFileRegistry { items })
+        Ok(ArchiveRegistry { items })
 	}
 	
 	pub fn to_buffer(&self) -> Result<Vec<u8>> {
@@ -86,7 +86,7 @@ impl CgfxFileRegistry {
 		let mut string_buffer: Vec<u8> = Vec::new();
 		
 		let mut write_string = |string: &str| {
-			let current_offset = Pointer(string_buffer.len().try_into().unwrap());
+			let current_offset: Pointer = string_buffer.len().into();
 			
 			string_buffer.extend(string.bytes());
 			string_buffer.extend([0].iter());
@@ -112,6 +112,6 @@ impl CgfxFileRegistry {
 	
 	pub fn from_yaml(yaml: &str) -> Result<Self> {
 		let items: Vec<RegistryItem> = serde_yaml::from_str(yaml)?;
-		Ok(CgfxFileRegistry { items })
+		Ok(ArchiveRegistry { items })
 	}
 }

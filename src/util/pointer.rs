@@ -1,4 +1,5 @@
-use std::{io::{Read, Write}, fmt::Debug, ops::{Add, Sub}};
+// darxoon's small pointer utility v1
+use std::{io::{Read, Write, Cursor}, fmt::Debug, ops::{Add, Sub}, result, num::TryFromIntError};
 
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -76,6 +77,7 @@ macro_rules! into_type_unwrap {
 	};
 }
 
+// TODO: replace u32 with private NonZeroU32
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Pointer(pub u32);
 
@@ -118,6 +120,37 @@ impl Sub<Self> for Pointer {
     }
 }
 
+impl<T> TryFrom<&Cursor<T>> for Pointer {
+    type Error = TryFromIntError;
+
+    fn try_from(value: &Cursor<T>) -> result::Result<Self, Self::Error> {
+        Ok(Pointer(value.position().try_into()?))
+    }
+}
+
+impl<T> TryFrom<&&Cursor<T>> for Pointer {
+    type Error = TryFromIntError;
+
+    fn try_from(value: &&Cursor<T>) -> result::Result<Self, Self::Error> {
+        Ok(Pointer(value.position().try_into()?))
+    }
+}
+
+impl<T> TryFrom<&mut Cursor<T>> for Pointer {
+    type Error = TryFromIntError;
+
+    fn try_from(value: &mut Cursor<T>) -> result::Result<Self, Self::Error> {
+        Ok(Pointer(value.position().try_into()?))
+    }
+}
+impl<T> TryFrom<&&mut Cursor<T>> for Pointer {
+    type Error = TryFromIntError;
+
+    fn try_from(value: &&mut Cursor<T>) -> result::Result<Self, Self::Error> {
+        Ok(Pointer(value.position().try_into()?))
+    }
+}
+
 from_type!(Pointer, u32);
 
 from_type_unwrap!(Pointer, i32);
@@ -131,16 +164,3 @@ into_type!(Pointer, i64);
 
 into_type_unwrap!(Pointer, i32);
 into_type_unwrap!(Pointer, usize);
-
-// TODO: are these used anywhere? if so, write these using macros too
-impl Into<u32> for &Pointer {
-    fn into(self) -> u32 {
-        self.0
-    }
-}
-
-impl Into<usize> for &Pointer {
-    fn into(self) -> usize {
-        self.0.try_into().unwrap()
-    }
-}

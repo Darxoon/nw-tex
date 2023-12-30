@@ -5,76 +5,76 @@ use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 macro_rules! from_type {
-	($t:ident, $from:ty) => {
-		impl From<$from> for $t {
-			fn from(value: $from) -> Self {
-				Pointer(value.into())
-			}
-		}
-		
-		impl Add<$from> for $t {
-			type Output = Self;
-		
-			fn add(self, rhs: $from) -> Self {
-				$t(self.0 + u32::from(rhs))
-			}
-		}
-		
-		impl Sub<$from> for $t {
-			type Output = Self;
-		
-			fn sub(self, rhs: $from) -> Self {
-				$t(self.0 - u32::from(rhs))
-			}
-		}
-	};
+    ($t:ident, $from:ty) => {
+        impl From<$from> for $t {
+            fn from(value: $from) -> Self {
+                Pointer(value.into())
+            }
+        }
+        
+        impl Add<$from> for $t {
+            type Output = Self;
+        
+            fn add(self, rhs: $from) -> Self {
+                $t(self.0 + u32::from(rhs))
+            }
+        }
+        
+        impl Sub<$from> for $t {
+            type Output = Self;
+        
+            fn sub(self, rhs: $from) -> Self {
+                $t(self.0 - u32::from(rhs))
+            }
+        }
+    };
 }
 
 macro_rules! from_type_unwrap {
-	($t:ident, $from:ty) => {
-		impl From<$from> for $t {
-			fn from(value: $from) -> Self {
-				Pointer(value.try_into().unwrap())
-			}
-		}
-		
-		impl Add<$from> for $t {
-			type Output = Self;
-		
-			fn add(self, rhs: $from) -> Self {
-				// it's beautiful
-				$t((i32::try_from(self.0).unwrap() + i32::try_from(rhs).unwrap()).try_into().unwrap())
-			}
-		}
-		
-		impl Sub<$from> for $t {
-			type Output = Self;
-		
-			fn sub(self, rhs: $from) -> Self {
-				$t((i32::try_from(self.0).unwrap() - i32::try_from(rhs).unwrap()).try_into().unwrap())
-			}
-		}
-	};
+    ($t:ident, $from:ty) => {
+        impl From<$from> for $t {
+            fn from(value: $from) -> Self {
+                Pointer(value.try_into().unwrap())
+            }
+        }
+        
+        impl Add<$from> for $t {
+            type Output = Self;
+        
+            fn add(self, rhs: $from) -> Self {
+                // it's beautiful
+                $t((i32::try_from(self.0).unwrap() + i32::try_from(rhs).unwrap()).try_into().unwrap())
+            }
+        }
+        
+        impl Sub<$from> for $t {
+            type Output = Self;
+        
+            fn sub(self, rhs: $from) -> Self {
+                $t((i32::try_from(self.0).unwrap() - i32::try_from(rhs).unwrap()).try_into().unwrap())
+            }
+        }
+    };
 }
 
 macro_rules! into_type {
-	($t:ident, $into:ty) => {
-		impl From<$t> for $into {
-			fn from(value: $t) -> Self {
-				value.0.into()
-			}
-		}
-	};
+    ($t:ident, $into:ty) => {
+        impl From<$t> for $into {
+            fn from(value: $t) -> Self {
+                value.0.into()
+            }
+        }
+    };
 }
 
 macro_rules! into_type_unwrap {
-	($t:ident, $into:ty) => {
-		impl From<$t> for $into {
-			fn from(value: $t) -> Self {
-				value.0.try_into().unwrap()
-			}
-		}
-	};
+    ($t:ident, $into:ty) => {
+        impl From<$t> for $into {
+            fn from(value: $t) -> Self {
+                value.0.try_into().unwrap()
+            }
+        }
+    };
 }
 
 // TODO: replace u32 with private NonZeroU32
@@ -82,20 +82,20 @@ macro_rules! into_type_unwrap {
 pub struct Pointer(pub u32);
 
 impl Pointer {
-	pub fn read(reader: &mut impl Read) -> Result<Option<Pointer>> {
-		let value = reader.read_u32::<LittleEndian>()?;
+    pub fn read(reader: &mut impl Read) -> Result<Option<Pointer>> {
+        let value = reader.read_u32::<LittleEndian>()?;
         
-		if value != 0 {
+        if value != 0 {
             Ok(Some(Pointer(value)))
         } else {
             Ok(None)
         }
-	}
-	
-	pub fn write(&self, writer: &mut impl Write) -> Result<()> {
-		writer.write_u32::<LittleEndian>(self.0)?;
-		Ok(())
-	}
+    }
+    
+    pub fn write(&self, writer: &mut impl Write) -> Result<()> {
+        writer.write_u32::<LittleEndian>(self.0)?;
+        Ok(())
+    }
 }
 
 impl Debug for Pointer {

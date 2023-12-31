@@ -9,7 +9,7 @@ use clap::{ArgAction, Parser, ValueEnum};
 use compression_cache::{CachedFile, CompressionCache};
 use nw_tex::{
     util::blz::{blz_decode, blz_encode},
-    CgfxFileRegistry, RegistryItem,
+    ArchiveRegistry, RegistryItem,
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
@@ -90,8 +90,8 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
         .to_str()
         .ok_or_else(|| Error::msg("Input file name contains invalid (not utf8) characters."))?;
     
-    let mut output_file_name = if input_file_name.ends_with(old_file_ending) {
-        input_file_name[..input_file_name.len() - old_file_ending.len()].to_owned()
+    let mut output_file_name = if let Some(input_file_name_stem) = input_file_name.strip_suffix(old_file_ending) {
+        input_file_name_stem.to_owned()
     } else {
         input_file_name.to_owned()
     };
@@ -118,7 +118,7 @@ fn extract(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, deco
     };
     
     let output_dir_name = match &opt_output {
-        Some(path) => get_input_sibling_path(&Path::new(path), ".yaml", "")?,
+        Some(path) => get_input_sibling_path(Path::new(path), ".yaml", "")?,
         None => get_input_sibling_path(&input, ".bin", "_tex")?,
     };
     
@@ -132,13 +132,13 @@ Make sure that it exists and can be accessed with the current permissions.", inp
 file with the same name but ending on '_info.bin' rather than '.bin'", secondary_input.display()));
     
     // parse files
-    let registry = CgfxFileRegistry::new(&secondary_file_buf)?;
+    let registry = ArchiveRegistry::new(&secondary_file_buf)?;
     
     // require --clean if `output_dir_name` contains files already
     if !clean_out_dir && output_dir_name.is_dir() {
         let output_dir_children: Vec<_> = fs::read_dir(&output_dir_name)?.collect();
         
-        if output_dir_children.len() > 0 {
+        if !output_dir_children.is_empty() {
             return Err(Error::msg(format!("\
                 The output directory \"{}\" contains items. If you want to overwrite them, \
                 run the program with the --clean option.", output_dir_name.display()
@@ -213,16 +213,16 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result
     
     let input_string = fs::read_to_string(input)?;
     
-    let registry = CgfxFileRegistry::from_yaml(&input_string)?;
+    let registry = ArchiveRegistry::from_yaml(&input_string)?;
     
     // read compression cache
     let compression_cache = if compress {
         let buffer = fs::read(input_cache_name)
-            .or_else(|_| Err(Error::msg(
+            .map_err(|_| Error::msg(
                 "Cache file could not be read, make sure it exists and can be accessed.\n\
                 Make sure that you extracted the archive with compression turned on (enable --blz flag during extraction) \
                 and that you did not move or delete the [...].cache file."
-            )))?;
+            ))?;
         
         Some(CompressionCache::from_buffer(&buffer)?)
     } else {
@@ -236,11 +236,11 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result
         let input_path = input_folder_name.join(&item.id).with_extension(file_extension);
         
         let mut buffer = fs::read(&input_path)
-            .or_else(|_| Err(Error::msg(format!(
+            .map_err(|_| Error::msg(format!(
                 "File {:?} could not be read. Make sure that the file exists and can be accessed.\n\
                 Did you extract the archive with decompression turned {} too? (enable --blz flag during extraction)",
                 &input_path, if compress { "on" } else { "off" }
-            ))))?;
+            )))?;
         
         if compress {
             let cache_item = compression_cache.as_ref().unwrap().files.iter()
@@ -286,7 +286,7 @@ fn main() -> Result<()> {
         println!("{:?}\n", args);
     } else {
         panic::set_hook(Box::new(|info| {
-            println!("{}", info.to_string());
+            println!("{}", info);
         }));
     }
     

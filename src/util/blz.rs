@@ -164,7 +164,7 @@ pub fn blz_encode(input_buffer: &mut [u8]) -> Result<Vec<u8>> {
             mask = BLZ_MASK;
         }
         
-        (length_best, position_best) = search(&input, &input_buffer, position_best);
+        (length_best, position_best) = search(&input, input_buffer, position_best);
         
         // TODO: add "best" compression ratio support (LZ-CUE optimization)
         
@@ -261,15 +261,13 @@ fn search(input: &Cursor<&[u8]>, input_buffer: &[u8], prev_position_result: Opti
     for current_position in 3..=max {
         let length = (0..BLZ_MAX_CODED).find(|current_length| {
             // make sure to not overflow beyond the input buffer
-            let r = input_position + *current_length == input_buffer.len()
+            input_position + *current_length == input_buffer.len()
             // make sure to not go beyond the already read bytes
             || *current_length >= current_position
             // length has been found if it can't be increased anymore
             // without the search result and upcoming input bytes to start diverging
             || input_buffer[input_position + *current_length]
-                != input_buffer[input_position + *current_length - current_position];
-            
-            r
+                != input_buffer[input_position + *current_length - current_position]
         }).unwrap_or(BLZ_MAX_CODED);
         
         if length > length_result {

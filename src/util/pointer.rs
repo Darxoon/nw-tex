@@ -2,6 +2,7 @@
 use std::{io::{Read, Write, Cursor}, fmt::Debug, ops::{Add, Sub}, result, num::TryFromIntError};
 
 use anyhow::Result;
+use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 macro_rules! from_type {
@@ -78,10 +79,18 @@ macro_rules! into_type_unwrap {
 }
 
 // TODO: replace u32 with private NonZeroU32
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, BinRead, BinWrite)]
 pub struct Pointer(pub u32);
 
 impl Pointer {
+    pub fn new(x: u32) -> Option<Self> {
+        if x != 0 {
+            Some(Pointer(x))
+        } else {
+            None
+        }
+    }
+    
     pub fn read(reader: &mut impl Read) -> Result<Option<Pointer>> {
         let value = reader.read_u32::<LittleEndian>()?;
         

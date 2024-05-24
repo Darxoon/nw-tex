@@ -1,5 +1,5 @@
 use std::{
-    io::{Cursor, Read, Write},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
     str::from_utf8,
 };
 
@@ -21,6 +21,33 @@ fn get_string(bytes: &[u8], start: Pointer) -> Result<String> {
 	};
 	
 	Ok(string.to_owned())
+}
+
+pub fn get_4_byte_string(reader: &mut impl Read) -> Result<String> {
+	let mut bytes: [u8; 4] = [0; 4];
+	reader.read(&mut bytes)?;
+	
+	Ok(from_utf8(&bytes)?.to_string())
+}
+
+pub fn write_at_pointer<W: Write + Seek>(writer: &mut W, pointer: Pointer, value: u32) -> Result<()> {
+	let current_offset = writer.stream_position()?;
+	
+	writer.seek(SeekFrom::Start(pointer.into()))?;
+	writer.write_u32::<LittleEndian>(value)?;
+	
+	writer.seek(SeekFrom::Start(current_offset))?;
+	
+	Ok(())
+}
+
+#[macro_export]
+macro_rules! assert_matching {
+	($writer:ident, $base_option:ident) => {
+		if let Some(base) = $base_option {
+            assert!(&***$writer.get_ref() == &base[..$writer.get_ref().len()], "Not matching");
+        }
+	};
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

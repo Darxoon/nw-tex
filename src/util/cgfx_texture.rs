@@ -1,10 +1,10 @@
-use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}};
+use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}, str::from_utf8};
 
 use anyhow::{Result, Error};
-use binrw::{parser, BinRead, BinResult};
-use byteorder::{ReadBytesExt, LittleEndian};
+use binrw::{parser, writer, BinRead, BinResult, BinWrite};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use super::{pointer::Pointer, bcres::CgfxDictValue};
+use super::{bcres::{CgfxDictValue, WriteContext}, pointer::Pointer};
 
 fn read_string(read: &mut impl Read) -> Result<String> {
 	let mut string_buffer = Vec::new();
@@ -44,6 +44,35 @@ fn brw_read_string() -> BinResult<Option<String>> {
     Ok(Some(string))
 }
 
+#[allow(path_statements)] // to disable warning on `endian;`
+#[parser(reader, endian)]
+fn brw_read_4_byte_string() -> BinResult<String> {
+    // I don't need to know the endianness and I can't find a
+    // better way to ignore the warning
+    endian;
+    
+    let mut bytes: [u8; 4] = [0; 4];
+	reader.read(&mut bytes)?;
+	
+	Ok(from_utf8(&bytes).unwrap().to_string()) // ughhh error handling is so painful with binrw
+}
+
+#[allow(path_statements)] // to disable warning on `endian;`
+#[writer(writer, endian)]
+fn brw_write_4_byte_string(string: &String) -> BinResult<()> {
+    let bytes = string.as_bytes();
+    let out = u32::from_le_bytes(bytes.try_into().unwrap()); // unwrap because BinResult is a pain
+	
+	out.write_options(writer, endian, ())?;
+    Ok(())
+}
+
+#[writer(writer, endian)]
+fn brw_write_zero(_: &Option<String>) -> BinResult<()> {
+    0u32.write_options(writer, endian, ())?;
+    Ok(())
+}
+
 #[parser(reader, endian)]
 fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     let reader_pos = reader.stream_position()?;
@@ -56,8 +85,8 @@ fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     Ok(Some(Pointer::from(reader_pos + pointer)))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead)]
-#[br(repr(u32), little)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite)]
+#[brw(repr(u32), little)]
 pub enum PicaTextureFormat {
     RGBA8,
     RGB8,
@@ -75,8 +104,9 @@ pub enum PicaTextureFormat {
     ETC1A4,
 }
 
-#[derive(Clone, PartialEq, Eq, BinRead)]
-#[brw(little, assert(location_ptr == 0, "ImageData has location_ptr {}", location_ptr))]
+#[derive(Clone, PartialEq, Eq, BinRead, BinWrite)]
+#[brw(little)]
+#[br(assert(location_ptr == 0, "ImageData has location_ptr {}", location_ptr))]
 pub struct ImageData {
     pub height: u32,
     pub width: u32,
@@ -86,6 +116,7 @@ pub struct ImageData {
     
     buffer_length: u32,
     #[br(parse_with = brw_relative_pointer)]
+    #[bw(map = |_| 0u32)]
     buffer_pointer: Option<Pointer>,
     
     pub dynamic_alloc: u32,
@@ -110,18 +141,25 @@ impl Debug for ImageData {
     }
 }
 
-#[derive(Debug, BinRead)]
-#[brw(little, assert(metadata_pointer == None, "CgfxTexture {:?} has metadata {:?}", name, metadata_pointer))]
+#[derive(Debug, BinRead, BinWrite)]
+// vvv required because brw_write_4_byte_string might panic otherwise
+#[brw(assert(magic.bytes().len() == 4, "Length of magic number {:?} must be 4 bytes", magic))]
+#[br(assert(metadata_pointer == None, "CgfxTexture {:?} has metadata {:?}", name, metadata_pointer))]
+#[brw(little)]
 pub struct CgfxTextureCommon {
     // cgfx object header
-    pub magic: u32,
+    #[br(parse_with = brw_read_4_byte_string)]
+    #[bw(write_with = brw_write_4_byte_string)]
+    pub magic: String,
     pub revision: u32,
     
     #[br(parse_with = brw_read_string)]
+    #[bw(write_with = brw_write_zero)]
     pub name: Option<String>,
     pub metadata_count: u32,
     
     #[br(map = |x: u32| Pointer::new(x))]
+    #[bw(map = |x: &Option<Pointer>| x.map_or(0, |ptr| ptr.0))]
     pub metadata_pointer: Option<Pointer>,
     
     // common texture fields
@@ -186,10 +224,60 @@ impl CgfxTexture {
         
         Ok(result)
     }
+    
+    pub fn to_writer(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
+        // write discriminant
+        let discriminant: u32 = match self {
+            CgfxTexture::Cube(_, _) => 0x20000009,
+            CgfxTexture::Image(_, _) => 0x20000011,
+        };
+        
+        writer.write_u32::<LittleEndian>(discriminant)?;
+        
+        // write common stuff
+        let common = match self {
+            CgfxTexture::Cube(common, _) => common,
+            CgfxTexture::Image(common, _) => common,
+        };
+        
+        let common_offset = Pointer::try_from(&writer)?;
+        let name_offset = common_offset + 8;
+        assert!(common.metadata_pointer == None);
+        
+        if let Some(name) = &common.name {
+            ctx.add_string(name)?;
+            ctx.add_string_reference(name_offset, name.clone());
+        }
+        
+        common.write(writer)?;
+        
+        // write texture specific stuff
+        match self {
+            CgfxTexture::Cube(_, _images) => todo!(),
+            CgfxTexture::Image(_, image) => {
+                writer.write_u32::<LittleEndian>(4)?;
+                
+                if let Some(image) = image {
+                    let current_offset = Pointer::try_from(&writer)?;
+                    ctx.add_image_reference_to_current_end(current_offset + 12)?;
+                    ctx.append_to_image_section(&image.image_bytes)?;
+                }
+                
+                // when are they serialized? here or after the textures in general?
+                image.write(writer)?;
+            },
+        }
+        
+        Ok(())
+    }
 }
 
 impl CgfxDictValue for CgfxTexture {
     fn read(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::from_reader(reader)
+    }
+    
+    fn write(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer, ctx)
     }
 }

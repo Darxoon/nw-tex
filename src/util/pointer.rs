@@ -105,6 +105,13 @@ impl Pointer {
         writer.write_u32::<LittleEndian>(self.0)?;
         Ok(())
     }
+    
+    pub fn write_option(pointer: Option<Self>, writer: &mut impl Write) -> Result<()> {
+        if let Some(pointer) = pointer {
+            pointer.write(writer)?;
+        }
+        Ok(())
+    }
 }
 
 impl Debug for Pointer {

@@ -4,29 +4,46 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use clap::{ArgAction, Parser, ValueEnum};
 use compression_cache::{CachedFile, CompressionCache};
 use nw_tex::{
-    util::blz::{blz_decode, blz_encode},
+    util::{
+        bcres::CgfxContainer,
+        blz::{blz_decode, blz_encode},
+        cgfx_image::{decode_swizzled_buffer, to_png},
+        cgfx_texture::{CgfxTexture, CgfxTextureCommon},
+    },
     ArchiveRegistry, RegistryItem,
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+#[cfg(test)]
+mod tests;
 
 mod compression_cache;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Method {
-    /// Takes in a 'kdm_*.bin' file and disassembles it into a human-readable '*.kersti' file
+    /// TODO: Takes in a 'kdm_*.bin' file and disassembles it into a human-readable '*.kersti' file
     Extract,
-    /// Takes in your modified kersti file and builds it into the original game file
+    /// TODO: Takes in your modified kersti file and builds it into the original game file
     Rebuild,
+}
+
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+enum AssetFormat {
+    Bcrez,
+    Bcres,
+    Png,
 }
 
 #[derive(Parser, Debug)]
 #[command(author, version, long_about = None, disable_version_flag = true, disable_help_flag = true)]
 struct Args {
-    /// Whether to 'disassemble' a KDM source file into a readable Kersti file or 'build' it vice versa.
+    /// Whether to 'extract' a .bin texture archive into the assets it contains or 'rebuild' the
+    /// assets back into a texture archive.
+    #[arg(verbatim_doc_comment)]
     method: Method,
     
     /// The input 'XXX_xx.bin' file to extract or .yaml file to build to the source asset again.
@@ -57,15 +74,24 @@ struct Args {
     #[arg(short, long, verbatim_doc_comment)]
     clean: bool,
     
-    /// Whether to decompress and recompress the archived resources with BLZ (Bottom LZ) compression.
+    /// The file format which the contents of the texture archive will be output in and will be
+    /// expected to have during rebuild. Make sure this argument has the same value during
+    /// extraction and rebuilding.
     /// 
-    /// Will output and read the files as `bcres`, rather than `bcrez`, to indicate the that files are
-    /// uncompressed with this option turned on.
+    /// .bcrez is how the assets are stored internally. The same as .bcres but has to be decompressed
+    /// first and recompressed when rebuilding, e.g. by blz.exe from CUE's GBA/DS compressors.
     /// 
-    /// NOTE:
-    /// Recompression is not supported yet.
+    /// .bcres is the standard 3DS asset file format for 3D models, textures, animations and more.
+    /// The bcres files used in texture archives only have one file inside, that being a texture
+    /// with the same name as the asset file.
+    /// 
+    /// Can be opened with CTR-Studio, although I haven't been able to replace textures
+    /// with it without causing the game to crash.
+    /// 
+    /// .png will output plain .png files for easy editing and viewing, however, this CANNOT be used to
+    /// rebuild archives yet, so ONLY use this to visualize assets for now!
     #[arg(short, long, verbatim_doc_comment)]
-    blz: bool,
+    asset_format: AssetFormat,
     
     /// Print app version
     #[arg(short, long, action = ArgAction::Version)]
@@ -90,11 +116,12 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
         .to_str()
         .ok_or_else(|| Error::msg("Input file name contains invalid (not utf8) characters."))?;
     
-    let mut output_file_name = if let Some(input_file_name_stem) = input_file_name.strip_suffix(old_file_ending) {
-        input_file_name_stem.to_owned()
-    } else {
-        input_file_name.to_owned()
-    };
+    let mut output_file_name =
+        if let Some(input_file_name_stem) = input_file_name.strip_suffix(old_file_ending) {
+            input_file_name_stem.to_owned()
+        } else {
+            input_file_name.to_owned()
+        };
     
     output_file_name.push_str(new_file_ending);
     path_buf.push(output_file_name);
@@ -102,7 +129,28 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn extract(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, decompress: bool) -> Result<()> {
+fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<Vec<u8>> {
+    let gfx = CgfxContainer::new(bcres_buffer)?;
+    
+    assert!(gfx.textures.is_some(), "Texture archive bcres file has to contain a texture section");
+    
+    let textures = gfx.textures.unwrap();
+    let texture_node = textures.nodes.iter()
+        .find(|node| node.value.is_some())
+        .expect("Texture archive bcres file has to contain at least one texture");
+    
+    let (common, image) = match texture_node.value.as_ref().unwrap() {
+        CgfxTexture::Image(common, image) => (common, image.as_ref().unwrap()),
+        other => panic!("Unsupported texture type {:?}, expected Image", other),
+    };
+    
+    let CgfxTextureCommon { texture_format, width, height, .. } = *common;
+    let decoded = decode_swizzled_buffer(&image.image_bytes, texture_format, width, height)?;
+    
+    Ok(to_png(&decoded, width, height)?)
+}
+
+fn extract(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, asset_format: AssetFormat) -> Result<()> {
     let secondary_input = get_input_sibling_path(&input, ".bin", "_info.bin")?;
     
     // print warning if output is set but doesn't end on _tex.yaml
@@ -155,8 +203,17 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
     
     fs::create_dir_all(&output_dir_name)?;
     
-    let resource_file_extension = if decompress { ".bcres" } else { ".bcrez" };
-    let mut compression_cache = if decompress { Some(CompressionCache::new())} else { None };
+    let resource_file_extension = match asset_format {
+        AssetFormat::Bcrez => ".bcrez",
+        AssetFormat::Bcres => ".bcres",
+        AssetFormat::Png => ".png",
+    };
+    
+    let mut compression_cache = if asset_format != AssetFormat::Bcrez {
+        Some(CompressionCache::new())
+    } else {
+        None
+    };
     
     for item in registry.items {
         let start_offset: usize = item.file_offset.try_into().unwrap();
@@ -165,11 +222,15 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
         
         let file_content = &input_file_buf[start_offset..end_offset];
         
-        if decompress {
+        if asset_format != AssetFormat::Bcrez {
             let decompressed = blz_decode(file_content)?;
             let decompressed_hash = md5::compute(&decompressed);
             
-            fs::write(file_name, decompressed)?;
+            if asset_format == AssetFormat::Png {
+                fs::write(file_name, bcres_buffer_into_png(&decompressed)?)?;
+            } else {
+                fs::write(file_name, decompressed)?;
+            }
             
             let cached_files = &mut compression_cache.as_mut().unwrap().files;
             cached_files.push(CachedFile {
@@ -189,10 +250,15 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
     Ok(())
 }
 
-fn rebuild(input: PathBuf, opt_output: Option<String>, compress: bool) -> Result<()> {
+fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat) -> Result<()> {
+    if asset_format == AssetFormat::Png {
+        return Err(anyhow!("Asset format .png not supported during rebuilding yet!"));
+    }
+    
+    let compress = asset_format == AssetFormat::Bcres;
+    
     // get adjacent input folder
     let input_folder_name = input.with_extension("");
-    
     let input_cache_name = input.with_extension("cache");
     
     let output_file_name = match &opt_output {
@@ -294,7 +360,7 @@ fn main() -> Result<()> {
     let output = args.output;
     
     match args.method {
-        Method::Extract => extract(input, output, args.clean, args.blz),
-        Method::Rebuild => rebuild(input, output, args.blz),
+        Method::Extract => extract(input, output, args.clean, args.asset_format),
+        Method::Rebuild => rebuild(input, output, args.asset_format),
     }
 }

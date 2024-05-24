@@ -19,6 +19,7 @@ binrw = "0.13.3"
 byteorder = "1.4.3"
 clap = { version = "4.3.15", features = ["derive"] }
 md5 = { version = "0.7.0" }
+png = "0.17.13"
 rayon = "1.8.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }
 serde-binary = "0.5.0"

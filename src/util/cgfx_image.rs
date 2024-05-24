@@ -1,6 +1,7 @@
 use std::slice::from_raw_parts;
 
 use anyhow::{anyhow, Result};
+use png::{BitDepth, ColorType, Encoder, ScaledFloat, SourceChromaticities};
 
 use super::cgfx_texture::PicaTextureFormat;
 
@@ -27,6 +28,33 @@ pub fn bytes_to_colors(bytes: &[u8]) -> &[RgbaColor] {
         
         from_raw_parts(colors_pointer, bytes.len() / 4)
     }
+}
+
+pub fn to_png(image_buffer: &[RgbaColor], width: u32, height: u32) -> Result<Vec<u8>> {
+    let bytes = colors_to_bytes(image_buffer);
+    let mut out: Vec<u8> = Vec::new();
+    
+    {
+        // setup png encoder
+        let mut encoder = Encoder::new(&mut out, width, height);
+        encoder.set_color(ColorType::Rgba);
+        encoder.set_depth(BitDepth::Eight);
+        encoder.set_source_gamma(ScaledFloat::from_scaled(45455));
+        encoder.set_source_gamma(ScaledFloat::new(1.0 / 2.2));
+        let source_chromaticities = SourceChromaticities::new(
+            (0.31270, 0.32900),
+            (0.64000, 0.33000),
+            (0.30000, 0.60000),
+            (0.15000, 0.06000)
+        );
+        encoder.set_source_chromaticities(source_chromaticities);
+        let mut writer = encoder.write_header().unwrap();
+        
+        // write png
+        writer.write_image_data(bytes)?;
+    }
+    
+    Ok(out)
 }
 
 // look-up table for 3ds swizzling

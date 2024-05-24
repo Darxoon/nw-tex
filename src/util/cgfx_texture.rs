@@ -104,6 +104,27 @@ pub enum PicaTextureFormat {
     ETC1A4,
 }
 
+impl PicaTextureFormat {
+    pub fn get_bpp(&self) -> u32 {
+        match self {
+            PicaTextureFormat::RGBA8 => 32,
+            PicaTextureFormat::RGB8 => 24,
+            PicaTextureFormat::RGBA5551 => 16,
+            PicaTextureFormat::RGB565 => 16,
+            PicaTextureFormat::RGBA4 => 16,
+            PicaTextureFormat::LA8 => 16,
+            PicaTextureFormat::HiLo8 => 16,
+            PicaTextureFormat::L8 => 8,
+            PicaTextureFormat::A8 => 8,
+            PicaTextureFormat::LA4 => 8,
+            PicaTextureFormat::L4 => 4,
+            PicaTextureFormat::A4 => 4,
+            PicaTextureFormat::ETC1 => 4,
+            PicaTextureFormat::ETC1A4 => 8,
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
 #[br(assert(location_ptr == 0, "ImageData has location_ptr {}", location_ptr))]

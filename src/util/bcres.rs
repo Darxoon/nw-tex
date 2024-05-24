@@ -314,8 +314,6 @@ impl CgfxContainer {
             None => None,
         };
         
-        println!("textures {:#?}", textures.as_ref().unwrap());
-        
         Ok(CgfxContainer {
             header,
             

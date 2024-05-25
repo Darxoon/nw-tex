@@ -78,7 +78,7 @@ struct Args {
     /// expected to have during rebuild. Make sure this argument has the same value during
     /// extraction and rebuilding.
     /// 
-    /// .bcrez is how the assets are stored internally. The same as .bcres but has to be decompressed
+    /// .bcrez (default) is how the assets are stored internally. The same as .bcres but has to be decompressed
     /// first and recompressed when rebuilding, e.g. by blz.exe from CUE's GBA/DS compressors.
     /// 
     /// .bcres is the standard 3DS asset file format for 3D models, textures, animations and more.
@@ -91,7 +91,7 @@ struct Args {
     /// .png will output plain .png files for easy editing and viewing, however, this CANNOT be used to
     /// rebuild archives yet, so ONLY use this to visualize assets for now!
     #[arg(short, long, verbatim_doc_comment)]
-    asset_format: AssetFormat,
+    asset_format: Option<AssetFormat>,
     
     /// Print app version
     #[arg(short, long, action = ArgAction::Version)]
@@ -358,9 +358,10 @@ fn main() -> Result<()> {
     
     let input = Path::new(&args.input).to_owned();
     let output = args.output;
+    let asset_format = args.asset_format.unwrap_or(AssetFormat::Bcrez);
     
     match args.method {
-        Method::Extract => extract(input, output, args.clean, args.asset_format),
-        Method::Rebuild => rebuild(input, output, args.asset_format),
+        Method::Extract => extract(input, output, args.clean, asset_format),
+        Method::Rebuild => rebuild(input, output, asset_format),
     }
 }

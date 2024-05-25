@@ -1,6 +1,7 @@
-use std::slice::from_raw_parts;
+use std::{io::Cursor, slice::from_raw_parts};
 
 use anyhow::{anyhow, Result};
+use byteorder::{LittleEndian, ReadBytesExt};
 use png::{BitDepth, ColorType, Encoder, ScaledFloat, SourceChromaticities};
 
 use super::cgfx_texture::PicaTextureFormat;
@@ -72,6 +73,10 @@ const SWIZZLE_LUT: [u32; 64] = [
 ];
 
 pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureFormat, width: u32, height: u32) -> Result<Vec<RgbaColor>> {
+    if input_format == PicaTextureFormat::ETC1A4 || input_format == PicaTextureFormat::ETC1 {
+        return decode_etc1(image_buffer, width, height, input_format == PicaTextureFormat::ETC1A4);
+    }
+    
     let bytes_per_pixel = input_format.get_bpp() / 8;
     let mut input_offset: usize = 0;
     let mut output: Vec<RgbaColor> = vec![RgbaColor::default(); (width * height).try_into()?];
@@ -110,7 +115,7 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                             b: b | (b << 4),
                             a: a | (a << 4),
                         }
-                    }
+                    },
                     _ => {
                         return Err(anyhow!("Format {:?} not implemented yet", input_format));
                     }
@@ -123,4 +128,165 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
     }
     
     Ok(output)
+}
+
+const ETC1_X: [u32; 4] = [ 0, 4, 0, 4 ];
+const ETC1_Y: [u32; 4] = [ 0, 0, 4, 4 ];
+
+fn decode_etc1(image_buffer: &[u8], width: u32, height: u32, use_alpha: bool) -> Result<Vec<RgbaColor>> {
+    let mut input_reader = Cursor::new(image_buffer);
+    let mut output: Vec<RgbaColor> = vec![RgbaColor::default(); (width * height).try_into()?];
+    
+    // iterate over every 8x8px chunk
+    for y in (0..height).step_by(8) {
+        for x in (0..width).step_by(8) {
+            
+            // iterate over every 4x4px block in this chunk
+            for (sub_x, sub_y) in ETC1_X.into_iter().zip(ETC1_Y) {
+                let alpha_block = if use_alpha { 
+                    input_reader.read_u64::<LittleEndian>()?
+                } else {
+                    u64::MAX
+                };
+                
+                let color_block_low = input_reader.read_u32::<LittleEndian>()?;
+                let color_block_high = input_reader.read_u32::<LittleEndian>()?;
+                
+                // decode color block
+                let mut base0: RgbaColor;
+                let mut base1: RgbaColor;
+                
+                // determines whether the current 4x4px chunk is
+                // subdivided horizontally (true) or vertically (false)
+                let flip = color_block_high & 0x1 != 0;
+                // if true, base0 will be RGBA5 and base1 will only
+                // encode the difference to base0 in RGBA3
+                let diff = color_block_high & 0x2 != 0;
+                
+                if diff {
+                    base0 = RgbaColor {
+                        r: ((color_block_high & 0xf8000000) >> 24) as u8,
+                        g: ((color_block_high & 0x00f80000) >> 16) as u8,
+                        b: ((color_block_high & 0x0000f800) >> 8) as u8,
+                        a: 0xFF,
+                    };
+                    base1 = RgbaColor { // confusing calculation I don't really understand but I hope this checks out
+                        r: ((base0.r >> 3) as i32 + (((color_block_high & 0x07000000) >> 19) as i8 >> 5) as i32) as u8,
+                        g: ((base0.g >> 3) as i32 + (((color_block_high & 0x00070000) >> 11) as i8 >> 5) as i32) as u8,
+                        b: ((base0.b >> 3) as i32 + (((color_block_high & 0x00000700) >> 3) as i8 >> 5) as i32) as u8,
+                        a: 0xFF,
+                    };
+                    base0.r |= base0.r >> 5;
+                    base0.g |= base0.g >> 5;
+                    base0.b |= base0.b >> 5;
+                    
+                    base1.r = (base1.r << 3) | (base1.r >> 2);
+                    base1.g = (base1.g << 3) | (base1.g >> 2);
+                    base1.b = (base1.b << 3) | (base1.b >> 2);
+                } else {
+                    base0 = RgbaColor {
+                        r: ((color_block_high & 0xf0000000) >> 24) as u8,
+                        g: ((color_block_high & 0x00f00000) >> 16) as u8,
+                        b: ((color_block_high & 0x0000f000) >> 8) as u8,
+                        a: 0xFF,
+                    };
+                    base1 = RgbaColor {
+                        r: ((color_block_high & 0x0f000000) >> 20) as u8,
+                        g: ((color_block_high & 0x000f0000) >> 12) as u8,
+                        b: ((color_block_high & 0x00000f00) >> 4) as u8,
+                        a: 0xFF,
+                    };
+                    base0.r |= base0.r >> 4;
+                    base0.g |= base0.g >> 4;
+                    base0.b |= base0.b >> 4;
+                    
+                    base1.r |= base1.r >> 4;
+                    base1.g |= base1.g >> 4;
+                    base1.b |= base1.b >> 4;
+                }
+                
+                let table0 = (color_block_high >> 5) & 0b111;
+                let table1 = (color_block_high >> 2) & 0b111;
+                
+                let mut current_chunk: [RgbaColor; 16] = [RgbaColor::default(); 16];
+                
+                for local_y in if flip { 0u32..2u32 } else { 0u32..4u32 } {
+                    for local_x in if flip { 0u32..4u32 } else { 0u32..2u32 } {
+                        let offset0 = local_y * 4 + local_x;
+                        let offset1 = if flip {
+                            (local_y + 2) * 4 + local_x
+                        } else {
+                            local_y * 4 + local_x + 2
+                        };
+                        let x1: u32 = if flip { local_x } else { local_x + 2 }.try_into()?;
+                        let y1: u32 = if flip { local_y + 2 } else { local_y }.try_into()?;
+                        
+                        current_chunk[offset0 as usize] =
+                            decode_etc1_pixel(base0, local_x, local_y, color_block_low.to_be(), table0)?;
+                        current_chunk[offset1 as usize] =
+                            decode_etc1_pixel(base1, x1, y1, color_block_low.to_be(), table1)?;
+                    }
+                }
+                
+                // write colors into output
+                let mut tile_offset: u32 = 0;
+                
+                for local_y in sub_y..sub_y + 4 {
+                    for local_x in sub_x..sub_x + 4 {
+                        let output_offset = x + local_x + (y + local_y) * width;
+                        
+                        output[output_offset as usize] = current_chunk[tile_offset as usize];
+                        
+                        let alpha_shift = ((local_x & 3) * 4 + (local_y & 3)) << 2;
+                        let alpha = (alpha_block >> alpha_shift) as u8 & 0xF;
+                        
+                        output[output_offset as usize].a = alpha | alpha << 4;
+                        tile_offset += 1;
+                    }
+                }
+            }
+            
+        }
+    }
+    
+    Ok(output)
+}
+
+const ETC1_LUT: [[i32; 4]; 8] = [
+    [   2,   8,    -2,   -8  ],
+    [   5,   17,   -5,  -17  ],
+    [   9,   29,   -9,  -29  ],
+    [  13,   42,  -13,  -42  ],
+    [  18,   60,  -18,  -60  ],
+    [  24,   80,  -24,  -80  ],
+    [  33,  106,  -33, -106  ],
+    [  47,  183,  -47, -183  ],
+];
+
+fn saturate(value: i32) -> u8 {
+    if value < 0 {
+        0
+    } else if value > 0xFF {
+        0xFF
+    } else {
+        value.try_into().unwrap()
+    }
+}
+
+fn decode_etc1_pixel(base_color: RgbaColor, x: u32, y: u32, block_big_endian: u32, table: u32) -> Result<RgbaColor> {
+    let index = x * 4 + y;
+    let msb = block_big_endian << 1; // why?
+    
+    let pixel = if index < 8 {
+        ETC1_LUT[table as usize][((block_big_endian >> (index + 24)) & 1) as usize + ((msb >> (index + 8)) & 2) as usize]
+    } else {
+        ETC1_LUT[table as usize][((block_big_endian >> (index +  8)) & 1) as usize + ((msb >> (index - 8)) & 2) as usize]
+    };
+    
+    Ok(RgbaColor {
+        r: saturate(base_color.r as i32 + pixel),
+        g: saturate(base_color.g as i32 + pixel),
+        b: saturate(base_color.b as i32 + pixel),
+        a: 0xFF
+    })
 }

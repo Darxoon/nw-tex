@@ -1,4 +1,4 @@
-use std::{io::Cursor, slice::from_raw_parts};
+use std::{cmp::max, io::Cursor, slice::from_raw_parts};
 
 use anyhow::{anyhow, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -13,6 +13,35 @@ pub struct RgbaColor {
     pub g: u8,
     pub b: u8,
     pub a: u8,
+}
+
+impl RgbaColor {
+    pub fn grayscale(lightness: u8) -> Self {
+        Self {
+            r: lightness,
+            g: lightness,
+            b: lightness,
+            a: 0xFF,
+        }
+    }
+    
+    pub fn grayscale_alpha(lightness: u8, alpha: u8) -> Self {
+        Self {
+            r: lightness,
+            g: lightness,
+            b: lightness,
+            a: alpha,
+        }
+    }
+    
+    pub fn from_alpha(alpha: u8) -> Self {
+        Self {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+            a: alpha,
+        }
+    }
 }
 
 pub fn colors_to_bytes(image_buffer: &[RgbaColor]) -> &[u8] {
@@ -77,7 +106,7 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
         return decode_etc1(image_buffer, width, height, input_format == PicaTextureFormat::ETC1A4);
     }
     
-    let bytes_per_pixel = input_format.get_bpp() / 8;
+    let bytes_per_pixel = max(input_format.get_bpp() / 8, 1);
     let mut input_offset: usize = 0;
     let mut output: Vec<RgbaColor> = vec![RgbaColor::default(); (width * height).try_into()?];
     
@@ -90,11 +119,11 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                 let local_x = p & 7;
                 let local_y = (p - local_x) >> 3;
                 
-                let output_offset = x + local_x + (y + local_y) * width;
+                let output_offset: usize = (x + local_x + (y + local_y) * width).try_into()?;
                 
                 match input_format {
                     PicaTextureFormat::RGBA8 => {
-                        output[output_offset as usize] = RgbaColor {
+                        output[output_offset] = RgbaColor {
                             r: image_buffer[input_offset + 3],
                             g: image_buffer[input_offset + 2],
                             b: image_buffer[input_offset + 1],
@@ -109,7 +138,7 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let b: u8 = ((raw >>  4) & 0xf).try_into()?;
                         let a: u8 = (raw & 0xf).try_into()?;
                         
-                        output[output_offset as usize] = RgbaColor {
+                        output[output_offset] = RgbaColor {
                             r: r | (r << 4),
                             g: g | (g << 4),
                             b: b | (b << 4),
@@ -123,7 +152,7 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let g: u8 = (((raw >>  5) & 0x3f) << 2).try_into()?;
                         let b: u8 = (((raw >>  0) & 0x1f) << 3).try_into()?;
                         
-                        output[output_offset as usize] = RgbaColor {
+                        output[output_offset] = RgbaColor {
                             r: r | (r >> 5),
                             g: g | (g >> 6),
                             b: b | (b >> 5),
@@ -138,7 +167,7 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let b: u8 = (((raw >>  1) & 0x1f) << 3).try_into()?;
                         let a: u8 = ((raw & 1) * 0xFF).try_into()?;
                         
-                        output[output_offset as usize] = RgbaColor {
+                        output[output_offset] = RgbaColor {
                             r: r | (r >> 5),
                             g: g | (g >> 5),
                             b: b | (b >> 5),
@@ -146,18 +175,44 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         }
                     },
                     PicaTextureFormat::L8 => {
-                        output[output_offset as usize] = RgbaColor {
-                            r: image_buffer[input_offset],
-                            g: image_buffer[input_offset],
-                            b: image_buffer[input_offset],
-                            a: 0xFF,
-                        }
+                        output[output_offset] = RgbaColor::grayscale(image_buffer[input_offset])
+                    },
+                    PicaTextureFormat::L4 => {
+                        let raw = image_buffer[input_offset / 2];
+                        
+                        let color = if input_offset % 2 == 0 {
+                            (raw & 0x0F) | (raw << 4)
+                        } else {
+                            (raw & 0xF0) | (raw >> 4)
+                        };
+                        
+                        output[output_offset] = RgbaColor::grayscale(color)
+                    },
+                    PicaTextureFormat::A8 => {
+                        output[output_offset] = RgbaColor::from_alpha(image_buffer[input_offset])
+                    },
+                    PicaTextureFormat::A4 => {
+                        let raw = image_buffer[input_offset / 2];
+                        
+                        let alpha = if input_offset % 2 == 0 {
+                            (raw & 0x0F) | (raw << 4)
+                        } else {
+                            (raw & 0xF0) | (raw >> 4)
+                        };
+                        
+                        output[output_offset] = RgbaColor::from_alpha(alpha)
+                    },
+                    PicaTextureFormat::LA8 => {
+                        let alpha: u8 = image_buffer[input_offset];
+                        let color: u8 = image_buffer[input_offset + 1];
+                        
+                        output[output_offset] = RgbaColor::grayscale_alpha(color, alpha)
                     },
                     PicaTextureFormat::LA4 => {
                         let high: u8 = (image_buffer[input_offset] & 0xF0) as u8;
                         let low: u8 = (image_buffer[input_offset] & 0x0F) as u8;
                         
-                        output[output_offset as usize] = RgbaColor {
+                        output[output_offset] = RgbaColor {
                             r: high | (high >> 4),
                             g: high | (high >> 4),
                             b: high | (high >> 4),

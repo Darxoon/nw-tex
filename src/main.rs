@@ -304,8 +304,8 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
         let mut buffer = fs::read(&input_path)
             .map_err(|_| Error::msg(format!(
                 "File {:?} could not be read. Make sure that the file exists and can be accessed.\n\
-                Did you extract the archive with decompression turned {} too? (enable --blz flag during extraction)",
-                &input_path, if compress { "on" } else { "off" }
+                If you used --asset-format {} during extraction, specify the same command line option during rebuilding too.",
+                &input_path, if compress { "bcrez" } else { "bcres" }
             )))?;
         
         if compress {

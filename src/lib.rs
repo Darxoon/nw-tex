@@ -53,8 +53,11 @@ macro_rules! assert_matching {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryItem {
 	pub id: String,
+	#[serde(skip)]
 	pub file_offset: u32,
+	// TODO: might this be the texture format? (RGBA4, ETC1A4, etc.)
 	pub field_0x8: u32,
+	#[serde(skip)]
 	pub byte_length: u32,
 }
 

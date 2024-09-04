@@ -279,7 +279,7 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
     
     let input_string = fs::read_to_string(input)?;
     
-    let registry = ArchiveRegistry::from_yaml(&input_string)?;
+    let mut registry = ArchiveRegistry::from_yaml(&input_string)?;
     
     // read compression cache
     let compression_cache = if compress {
@@ -331,11 +331,11 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
     let archived_files = archived_files_result?;
 
     // write archive file
-    let mut archived_file_indices: Vec<usize> = Vec::new();
     let mut archive_buffer: Vec<u8> = Vec::new();
     
-    for file_buf in archived_files {
-        archived_file_indices.push(archive_buffer.len());
+    for (i, file_buf) in archived_files.into_iter().enumerate() {
+        registry.items[i].file_offset = archive_buffer.len().try_into().unwrap();
+        registry.items[i].byte_length = file_buf.len().try_into().unwrap();
         archive_buffer.extend(file_buf);
     }
     

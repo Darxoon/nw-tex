@@ -207,6 +207,7 @@ pub fn blz_encode(input_buffer: &mut [u8]) -> Result<Vec<u8>> {
     }
     
     input_buffer.reverse();
+    result_buffer.reverse();
     
     let input_length: u32 = input_buffer.len().try_into().unwrap();
     

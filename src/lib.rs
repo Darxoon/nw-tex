@@ -69,8 +69,7 @@ impl RegistryItem {
 		let field_0x8 = reader.read_u32::<LittleEndian>()?;
 		let byte_length = reader.read_u32::<LittleEndian>()?;
         
-		// TODO: dangerous magic number
-		let id = get_string(id_pointer + 0x1e64)?;
+		let id = get_string(id_pointer)?;
 		
 		Ok(Self {
 			id,
@@ -98,11 +97,13 @@ pub struct ArchiveRegistry {
 
 impl ArchiveRegistry {
 	pub fn new(buffer: &[u8]) -> Result<Self> {
-		let get_string = |ptr| get_string(buffer, ptr);
 		let mut cursor = Cursor::new(buffer);
 		
 		let item_count = cursor.read_u32::<LittleEndian>()?;
 		let mut items = Vec::default();
+		
+		let string_section_offset = 4 + item_count * 16;
+		let get_string = |ptr| get_string(buffer, ptr + string_section_offset);
 		
 		for _ in 0..item_count {
 			items.push(RegistryItem::read(&mut cursor, &get_string)?);

@@ -339,6 +339,10 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
         archive_buffer.extend(file_buf);
     }
     
+    if let Some(parent) = output_file_name.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    
     fs::write(output_file_name, archive_buffer)?;
     fs::write(secondary_output_file_name, registry.to_buffer()?)?;
     

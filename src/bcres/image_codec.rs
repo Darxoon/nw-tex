@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use byteorder::{LittleEndian, ReadBytesExt};
 use png::{BitDepth, ColorType, Encoder, ScaledFloat, SourceChromaticities};
 
-use super::cgfx_texture::PicaTextureFormat;
+use super::texture::PicaTextureFormat;
 
 #[derive(Clone, Copy, Default, Debug)]
 #[repr(C)]

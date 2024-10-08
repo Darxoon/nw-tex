@@ -1,7 +1,7 @@
 use std::fs;
 
 use anyhow::Result;
-use nw_tex::util::bcres::CgfxContainer;
+use nw_tex::bcres::bcres::CgfxContainer;
 
 use crate::{extract, AssetFormat};
 

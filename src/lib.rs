@@ -4,10 +4,12 @@ use std::{
 };
 
 use anyhow::Result;
+use bcres::texture::PicaTextureFormat;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
-use util::{cgfx_texture::PicaTextureFormat, pointer::Pointer};
+use util::pointer::Pointer;
 
+pub mod bcres;
 pub mod util;
 
 fn get_string(bytes: &[u8], start: Pointer) -> Result<String> {

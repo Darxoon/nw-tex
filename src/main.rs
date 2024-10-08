@@ -8,12 +8,12 @@ use anyhow::{anyhow, Error, Result};
 use clap::{ArgAction, Parser, ValueEnum};
 use compression_cache::{CachedFile, CompressionCache};
 use nw_tex::{
-    util::{
+    bcres::{
         bcres::CgfxContainer,
-        blz::{blz_decode, blz_encode},
-        cgfx_image::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS},
-        cgfx_texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat},
+        image_codec::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS},
+        texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat},
     },
+    util::blz::{blz_decode, blz_encode},
     ArchiveRegistry, RegistryItem,
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};

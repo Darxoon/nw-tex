@@ -5,7 +5,9 @@ use binrw::{parser, writer, BinRead, BinResult, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
-use super::{bcres::{CgfxDictValue, WriteContext}, pointer::Pointer};
+use crate::util::pointer::Pointer;
+
+use super::bcres::{CgfxDictValue, WriteContext};
 
 fn read_string(read: &mut impl Read) -> Result<String> {
 	let mut string_buffer = Vec::new();

@@ -4,9 +4,9 @@ use anyhow::Result;
 use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{assert_matching, get_4_byte_string, write_at_pointer};
+use crate::{assert_matching, get_4_byte_string, util::pointer::Pointer, write_at_pointer};
 
-use super::{pointer::Pointer, cgfx_texture::CgfxTexture};
+use super::texture::CgfxTexture;
 
 fn read_string(read: &mut impl Read) -> Result<String> {
 	let mut string_buffer = Vec::new();

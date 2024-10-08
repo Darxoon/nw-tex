@@ -3,6 +3,7 @@ use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}, str::from_utf8};
 use anyhow::{Result, Error};
 use binrw::{parser, writer, BinRead, BinResult, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use serde::{Deserialize, Serialize};
 
 use super::{bcres::{CgfxDictValue, WriteContext}, pointer::Pointer};
 
@@ -85,7 +86,7 @@ fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     Ok(Some(Pointer::from(reader_pos + pointer)))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
 #[brw(repr(u32), little)]
 pub enum PicaTextureFormat {
     RGBA8,

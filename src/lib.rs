@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
-use util::pointer::Pointer;
+use util::{cgfx_texture::PicaTextureFormat, pointer::Pointer};
 
 pub mod util;
 
@@ -53,9 +53,12 @@ macro_rules! assert_matching {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryItem {
 	pub id: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub is_readonly: Option<bool>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub image_format: Option<PicaTextureFormat>,
 	#[serde(skip)]
 	pub file_offset: u32,
-	// TODO: might this be the texture format? (RGBA4, ETC1A4, etc.)
 	pub field_0x8: u32,
 	#[serde(skip)]
 	pub byte_length: u32,
@@ -73,6 +76,8 @@ impl RegistryItem {
 		
 		Ok(Self {
 			id,
+			is_readonly: None,
+			image_format: None,
 			file_offset,
 			field_0x8,
 			byte_length,

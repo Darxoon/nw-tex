@@ -87,6 +87,10 @@ pub fn to_png(image_buffer: &[RgbaColor], width: u32, height: u32) -> Result<Vec
     Ok(out)
 }
 
+pub const ENCODABLE_FORMATS: [PicaTextureFormat; 0] = [
+    // PicaTextureFormat::RGBA5551,
+];
+
 // look-up table for 3ds swizzling
 // all of this is confusing so this
 // is from SPICA/CTR Studio

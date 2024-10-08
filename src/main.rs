@@ -11,8 +11,8 @@ use nw_tex::{
     util::{
         bcres::CgfxContainer,
         blz::{blz_decode, blz_encode},
-        cgfx_image::{decode_swizzled_buffer, to_png},
-        cgfx_texture::{CgfxTexture, CgfxTextureCommon},
+        cgfx_image::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS},
+        cgfx_texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat},
     },
     ArchiveRegistry, RegistryItem,
 };
@@ -129,7 +129,7 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<Vec<u8>> {
+fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<(Vec<u8>, PicaTextureFormat)> {
     let gfx = CgfxContainer::new(bcres_buffer)?;
     
     assert!(gfx.textures.is_some(), "Texture archive bcres file has to contain a texture section");
@@ -147,7 +147,7 @@ fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<Vec<u8>> {
     let CgfxTextureCommon { texture_format, width, height, .. } = *common;
     let decoded = decode_swizzled_buffer(&image.image_bytes, texture_format, width, height)?;
     
-    Ok(to_png(&decoded, width, height)?)
+    Ok((to_png(&decoded, width, height)?, texture_format))
 }
 
 fn extract(input: PathBuf, opt_output: Option<String>, clean_out_dir: bool, asset_format: AssetFormat) -> Result<()> {
@@ -180,7 +180,7 @@ Make sure that it exists and can be accessed with the current permissions.", inp
 file with the same name but ending on '_info.bin' rather than '.bin'", secondary_input.display()));
     
     // parse files
-    let registry = ArchiveRegistry::new(&secondary_file_buf)?;
+    let mut registry = ArchiveRegistry::new(&secondary_file_buf)?;
     
     // require --clean if `output_dir_name` contains files already
     if !clean_out_dir && output_dir_name.is_dir() {
@@ -195,8 +195,6 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
     }
     
     // write output files
-    fs::write(&output_file_name, registry.to_yaml()?)?;
-    
     if clean_out_dir && output_dir_name.is_dir() {
         fs::remove_dir_all(&output_dir_name)?;
     }
@@ -215,33 +213,47 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
         None
     };
     
-    for item in registry.items {
+    for item in registry.items.iter_mut() {
         let start_offset: usize = item.file_offset.try_into().unwrap();
         let end_offset: usize = (item.file_offset + item.byte_length).try_into().unwrap();
-        let file_name = output_dir_name.join(item.id.clone() + resource_file_extension);
         
         let file_content = &input_file_buf[start_offset..end_offset];
+        let filename: String;
+        let to_write: Vec<u8>;
         
-        if asset_format != AssetFormat::Bcrez {
+        if asset_format == AssetFormat::Bcrez {
+            to_write = file_content.to_owned();
+            filename = item.id.clone();
+        } else {
             let decompressed = blz_decode(file_content)?;
             let decompressed_hash = md5::compute(&decompressed);
             
-            if asset_format == AssetFormat::Png {
-                fs::write(file_name, bcres_buffer_into_png(&decompressed)?)?;
-            } else {
-                fs::write(file_name, decompressed)?;
-            }
-            
             let cached_files = &mut compression_cache.as_mut().unwrap().files;
             cached_files.push(CachedFile {
-                name: item.id,
+                name: item.id.clone(),
                 decompressed_file_hash: decompressed_hash.0,
                 compressed_content: file_content.to_owned(),
             });
-        } else {
-            fs::write(file_name, file_content)?;
+            
+            if asset_format == AssetFormat::Png {
+                let (buf, texture_format) = bcres_buffer_into_png(&decompressed)?;
+                let readonly = !ENCODABLE_FORMATS.contains(&texture_format);
+                item.image_format = Some(texture_format);
+                item.is_readonly = if readonly { Some(readonly) } else { None };
+                
+                to_write = buf;
+                filename = if readonly { "READONLY_".to_owned() + &item.id } else { item.id.clone() };
+            } else {
+                to_write = decompressed;
+                filename = item.id.clone();
+            }
         }
+        
+        let file_name = output_dir_name.join(filename + resource_file_extension);
+        fs::write(file_name, to_write)?;
     }
+    
+    fs::write(&output_file_name, registry.to_yaml()?)?;
     
     if let Some(compression_cache) = compression_cache {
         fs::write(output_file_name.with_extension("cache"), compression_cache.to_buffer()?)?;

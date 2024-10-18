@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::Result;
-use binrw::{parser, writer, BinRead, BinResult, BinWrite, Endian};
+use binrw::{meta::{EndianKind, ReadEndian, WriteEndian}, parser, writer, BinRead, BinResult, BinWrite, Endian};
 use byteorder::ReadBytesExt;
 use na::{Matrix3x4, Vec3};
 
@@ -115,6 +115,7 @@ pub struct CgfxObjectHeader {
 }
 
 #[derive(Debug, Clone, BinRead, BinWrite)]
+#[brw(little)]
 pub struct CgfxNodeHeader {
     pub branch_visible: u32,
     pub is_branch_visible: u32,
@@ -160,6 +161,10 @@ impl BinRead for CgfxTransform {
     }
 }
 
+impl ReadEndian for CgfxTransform {
+    const ENDIAN: EndianKind = EndianKind::Endian(Endian::Little);
+}
+
 impl BinWrite for CgfxTransform {
     type Args<'a> = ();
 
@@ -200,4 +205,8 @@ impl BinWrite for CgfxTransform {
         
         Ok(())
     }
+}
+
+impl WriteEndian for CgfxTransform {
+    const ENDIAN: EndianKind = EndianKind::Endian(Endian::Little);
 }

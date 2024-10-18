@@ -6,7 +6,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::{assert_matching, get_4_byte_string, util::pointer::Pointer, write_at_pointer};
 
-use super::texture::CgfxTexture;
+use super::texture::{CgfxTexture, PicaTextureFormat};
 
 fn read_string(read: &mut impl Read) -> Result<String> {
 	let mut string_buffer = Vec::new();
@@ -88,7 +88,7 @@ impl CgfxDictValue for () {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct CgfxNode<T: CgfxDictValue> {
     pub reference_bit: u32,
     pub left_node_index: u16,
@@ -147,7 +147,7 @@ impl<T: CgfxDictValue> CgfxNode<T> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct CgfxDict<T: CgfxDictValue> {
     pub magic_number: String,
     pub tree_length: u32,
@@ -246,7 +246,7 @@ pub struct CgfxHeader {
     pub content_length: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CgfxContainer {
     pub header: CgfxHeader,
     
@@ -422,5 +422,70 @@ impl CgfxContainer {
             writer.get_ref().len());
         
         Ok(out)
+    }
+    
+    pub fn from_single_texture(name: String, orig_reference_bit: u32, texture: CgfxTexture) -> CgfxContainer {
+        let header = CgfxHeader {
+            byte_order_mark: 0xfeff,
+            header_length: 20,
+            revision: 0x5000000,
+            file_length: 0x180 + texture.size(),
+            sections_count: 2,
+            content_magic_number: 0x41544144,
+            content_length: 356,
+        };
+        
+        let name_len =  texture.metadata().name.as_ref().map_or(0, |name| name.len());
+        
+        // println!("{}: {} {}", texture.metadata().name.as_ref().unwrap_or(&"None".to_string()), (name_len << 3) - 2, orig_reference_bit);
+        
+        let textures = CgfxDict::<CgfxTexture> {
+            magic_number: "DICT".to_string(),
+            tree_length: 44,
+            values_count: 1,
+            nodes: vec![
+                CgfxNode::<CgfxTexture> {
+                    reference_bit: 0xFFFFFFFF,
+                    left_node_index: 1,
+                    right_node_index: 0,
+                    name: None,
+                    value: None,
+                    file_offset: Pointer(0),
+                    name_pointer: None,
+                    value_pointer: None,
+                },
+                CgfxNode::<CgfxTexture> {
+                    reference_bit: ((name_len << 3) - 2).try_into().unwrap(),
+                    left_node_index: 0,
+                    right_node_index: 1,
+                    name: Some(name),
+                    value: Some(texture),
+                    file_offset: Pointer(0),
+                    name_pointer: None,
+                    value_pointer: None,
+                },
+            ],
+        };
+        
+        CgfxContainer {
+            header,
+            
+            models: None,
+            textures: Some(textures),
+            luts: None,
+            materials: None,
+            shaders: None,
+            cameras: None,
+            lights: None,
+            fogs: None,
+            scenes: None,
+            skeletal_animations: None,
+            material_animations: None,
+            visibility_animations: None,
+            camera_animations: None,
+            light_animations: None,
+            fog_animations: None,
+            emitters: None,
+        }
     }
 }

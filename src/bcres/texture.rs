@@ -1,92 +1,13 @@
-use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}, str::from_utf8};
+use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}};
 
 use anyhow::{Result, Error};
-use binrw::{parser, writer, BinRead, BinResult, BinWrite};
+use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
 use crate::util::pointer::Pointer;
 
-use super::bcres::{CgfxDictValue, WriteContext};
-
-fn read_string(read: &mut impl Read) -> Result<String> {
-	let mut string_buffer = Vec::new();
-	
-	loop {
-		let b = read.read_u8()?;
-		
-		if b != 0 {
-			string_buffer.push(b);
-		} else {
-			break;
-		}
-	}
-	
-	Ok(String::from_utf8(string_buffer)?)
-}
-
-#[parser(reader, endian)]
-fn brw_read_string() -> BinResult<Option<String>> {
-    let reader_pos = reader.stream_position()?;
-    let pointer: u64 = u32::read_options(reader, endian, ())?.into();
-    
-    if pointer == 0 {
-        return Ok(None);
-    }
-    
-    reader.seek(SeekFrom::Start(reader_pos + pointer))?;
-    
-    let string = read_string(reader)
-        .map_err(|err| binrw::Error::Custom {
-            pos: reader.stream_position().unwrap(),
-            err: Box::new(err),
-        })?;
-    
-    reader.seek(SeekFrom::Start(reader_pos + 4))?;
-    
-    Ok(Some(string))
-}
-
-#[allow(path_statements)] // to disable warning on `endian;`
-#[parser(reader, endian)]
-fn brw_read_4_byte_string() -> BinResult<String> {
-    // I don't need to know the endianness and I can't find a
-    // better way to ignore the warning
-    endian;
-    
-    let mut bytes: [u8; 4] = [0; 4];
-	reader.read(&mut bytes)?;
-	
-	Ok(from_utf8(&bytes).unwrap().to_string()) // ughhh error handling is so painful with binrw
-}
-
-#[allow(path_statements)] // to disable warning on `endian;`
-#[writer(writer, endian)]
-fn brw_write_4_byte_string(string: &String) -> BinResult<()> {
-    let bytes = string.as_bytes();
-    let out = u32::from_le_bytes(bytes.try_into().unwrap()); // unwrap because BinResult is a pain
-	
-	out.write_options(writer, endian, ())?;
-    Ok(())
-}
-
-#[writer(writer, endian)]
-fn brw_write_zero(_: &Option<String>) -> BinResult<()> {
-    0u32.write_options(writer, endian, ())?;
-    Ok(())
-}
-
-#[parser(reader, endian)]
-fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
-    let reader_pos = reader.stream_position()?;
-    let pointer: u64 = u32::read_options(reader, endian, ())?.into();
-    
-    if pointer == 0 {
-        return Ok(None);
-    }
-    
-    Ok(Some(Pointer::from(reader_pos + pointer)))
-}
+use super::{bcres::{CgfxDictValue, WriteContext}, util::{brw_relative_pointer, CgfxObjectHeader}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
 #[brw(repr(u32), little)]
@@ -166,25 +87,10 @@ impl Debug for ImageData {
 }
 
 #[derive(Debug, BinRead, BinWrite)]
-// vvv required because brw_write_4_byte_string might panic otherwise
-#[brw(assert(magic.bytes().len() == 4, "Length of magic number {:?} must be 4 bytes", magic))]
-#[br(assert(metadata_pointer == None, "CgfxTexture {:?} has metadata {:?}", name, metadata_pointer))]
 #[brw(little)]
 pub struct CgfxTextureCommon {
     // cgfx object header
-    #[br(parse_with = brw_read_4_byte_string)]
-    #[bw(write_with = brw_write_4_byte_string)]
-    pub magic: String,
-    pub revision: u32,
-    
-    #[br(parse_with = brw_read_string)]
-    #[bw(write_with = brw_write_zero)]
-    pub name: Option<String>,
-    pub metadata_count: u32,
-    
-    #[br(map = |x: u32| Pointer::new(x))]
-    #[bw(map = |x: &Option<Pointer>| x.map_or(0, |ptr| ptr.0))]
-    pub metadata_pointer: Option<Pointer>,
+    pub cgfx_object_header: CgfxObjectHeader,
     
     // common texture fields
     pub height: u32,
@@ -266,9 +172,9 @@ impl CgfxTexture {
         
         let common_offset = Pointer::try_from(&writer)?;
         let name_offset = common_offset + 8;
-        assert!(common.metadata_pointer == None);
+        assert!(common.cgfx_object_header.metadata_pointer == None);
         
-        if let Some(name) = &common.name {
+        if let Some(name) = &common.cgfx_object_header.name {
             ctx.add_string(name)?;
             ctx.add_string_reference(name_offset, name.clone());
         }
@@ -282,6 +188,7 @@ impl CgfxTexture {
                 writer.write_u32::<LittleEndian>(4)?;
                 
                 if let Some(image) = image {
+                    // make sure image.buffer_pointer gets updated
                     let current_offset = Pointer::try_from(&writer)?;
                     ctx.add_image_reference_to_current_end(current_offset + 12)?;
                     ctx.append_to_image_section(&image.image_bytes)?;

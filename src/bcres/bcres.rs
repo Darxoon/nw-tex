@@ -6,7 +6,7 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::{assert_matching, get_4_byte_string, util::pointer::Pointer, write_at_pointer};
 
-use super::texture::CgfxTexture;
+use super::{model::CgfxModel, texture::CgfxTexture};
 
 fn read_string(read: &mut impl Read) -> Result<String> {
 	let mut string_buffer = Vec::new();
@@ -88,7 +88,7 @@ impl CgfxDictValue for () {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CgfxNode<T: CgfxDictValue> {
     pub reference_bit: u32,
     pub left_node_index: u16,
@@ -147,7 +147,7 @@ impl<T: CgfxDictValue> CgfxNode<T> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CgfxDict<T: CgfxDictValue> {
     pub magic_number: String,
     pub tree_length: u32,
@@ -190,7 +190,7 @@ impl<T: CgfxDictValue> CgfxDict<T> {
                 let mut value_reader = reader.clone();
                 value_reader.set_position(value_offset.into());
                 
-                node.value = Some(T::read(reader)?);
+                node.value = Some(T::read(&mut value_reader)?);
             }
         }
         
@@ -251,7 +251,7 @@ pub struct CgfxContainer {
     pub header: CgfxHeader,
     
     // TODO: replace with actual Table struct when table parsing is done
-    pub models: Option<CgfxDict<()>>,
+    pub models: Option<CgfxDict<CgfxModel>>,
     pub textures: Option<CgfxDict<CgfxTexture>>,
     pub luts: Option<CgfxDict<()>>,
     pub materials: Option<CgfxDict<()>>,
@@ -309,6 +309,11 @@ impl CgfxContainer {
         
         let mut unit_dicts_iter = unit_dicts.into_iter();
         
+        let models = match dict_references[0].1 {
+            Some(pointer) => Some(CgfxDict::<CgfxModel>::from_buffer(buffer, pointer)?),
+            None => None,
+        };
+        
         let textures = match dict_references[1].1 {
             Some(pointer) => Some(CgfxDict::<CgfxTexture>::from_buffer(buffer, pointer)?),
             None => None,
@@ -317,9 +322,9 @@ impl CgfxContainer {
         Ok(CgfxContainer {
             header,
             
-            models: unit_dicts_iter.next().unwrap(),
+            models,
             textures,
-            luts: unit_dicts_iter.nth(1).unwrap(),
+            luts: unit_dicts_iter.nth(2).unwrap(),
             materials: unit_dicts_iter.next().unwrap(),
             shaders: unit_dicts_iter.next().unwrap(),
             cameras: unit_dicts_iter.next().unwrap(),

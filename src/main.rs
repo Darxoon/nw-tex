@@ -373,11 +373,17 @@ fn main() -> Result<()> {
     }
     
     let input = Path::new(&args.input).to_owned();
-    let output = args.output;
-    let asset_format = args.asset_format.unwrap_or(AssetFormat::Bcrez);
+    // let output = args.output;
+    // let asset_format = args.asset_format.unwrap_or(AssetFormat::Bcrez);
     
-    match args.method {
-        Method::Extract => extract(input, output, args.clean, asset_format),
-        Method::Rebuild => rebuild(input, output, asset_format),
-    }
+    let input_file = fs::read(input)?;
+    let bcres = CgfxContainer::new(&input_file)?;
+    println!("{:#?}", bcres.models);
+    
+    return Ok(());
+    
+    // match args.method {
+    //     Method::Extract => extract(input, output, args.clean, asset_format),
+    //     Method::Rebuild => rebuild(input, output, asset_format),
+    // }
 }

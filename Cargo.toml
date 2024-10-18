@@ -15,10 +15,11 @@ keywords = ["paper mario", "reverse engineering"]
 
 [dependencies]
 anyhow = { version = "1.0.72", features = ["backtrace"] }
-binrw = "0.13.3"
+binrw = "0.14.1"
 byteorder = "1.4.3"
 clap = { version = "4.3.15", features = ["derive"] }
 md5 = { version = "0.7.0" }
+na = "0.32.2"
 png = "0.17.13"
 rayon = "1.8.0"
 serde = { version = "1.0.193", features = ["serde_derive"] }

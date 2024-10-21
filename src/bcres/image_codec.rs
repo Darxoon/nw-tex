@@ -1,12 +1,14 @@
 use std::{cmp::max, io::Cursor, slice::from_raw_parts};
 
 use anyhow::{anyhow, Result};
+use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt};
 use png::{BitDepth, ColorType, Encoder, ScaledFloat, SourceChromaticities};
 
 use super::texture::PicaTextureFormat;
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, BinRead, BinWrite)]
+#[brw(little)]
 #[repr(C)]
 pub struct RgbaColor {
     pub r: u8,

@@ -74,16 +74,16 @@ impl WriteContext {
 }
 
 pub trait CgfxDictValue : Sized {
-    fn read(reader: &mut Cursor<&[u8]>) -> Result<Self>;
-    fn write(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()>;
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self>;
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()>;
 }
 
 impl CgfxDictValue for () {
-    fn read(_: &mut Cursor<&[u8]>) -> Result<Self> {
+    fn read_dict_value(_: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(())
     }
     
-    fn write(&self, _: &mut Cursor<&mut Vec<u8>>, _: &mut  WriteContext) -> Result<()> {
+    fn write_dict_value(&self, _: &mut Cursor<&mut Vec<u8>>, _: &mut  WriteContext) -> Result<()> {
         Ok(())
     }
 }
@@ -190,7 +190,7 @@ impl<T: CgfxDictValue> CgfxDict<T> {
                 let mut value_reader = reader.clone();
                 value_reader.set_position(value_offset.into());
                 
-                node.value = Some(T::read(&mut value_reader)?);
+                node.value = Some(T::read_dict_value(&mut value_reader)?);
             }
         }
         
@@ -221,7 +221,7 @@ impl<T: CgfxDictValue> CgfxDict<T> {
                 write_at_pointer(writer, value_pointer_location, relative_value_offset.into())?;
                 
                 // write value
-                value.write(writer, ctx)?;
+                value.write_dict_value(writer, ctx)?;
             }
         }
         

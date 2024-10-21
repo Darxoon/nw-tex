@@ -6,11 +6,14 @@ use std::{
 };
 
 use anyhow::Result;
-use binrw::{meta::{EndianKind, ReadEndian, WriteEndian}, parser, writer, BinRead, BinResult, BinWrite, Endian};
+use binrw::{
+    meta::{EndianKind, ReadEndian, WriteEndian},
+    parser, writer, BinRead, BinResult, BinWrite, Endian,
+};
 use byteorder::ReadBytesExt;
-use na::{Matrix3x4, Vec3};
+use na::Matrix3x4;
 
-use crate::util::pointer::Pointer;
+use crate::util::{math::Vec3, pointer::Pointer};
 
 use super::bcres::CgfxDict;
 
@@ -27,7 +30,6 @@ pub fn brw_read_4_byte_string() -> BinResult<String> {
     Ok(from_utf8(&bytes).unwrap().to_string()) // ughhh error handling is so painful with binrw
 }
 
-#[allow(path_statements)] // to disable warning on `endian;`
 #[writer(writer, endian)]
 pub fn brw_write_4_byte_string(string: &String) -> BinResult<()> {
     let bytes = string.as_bytes();

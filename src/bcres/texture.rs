@@ -204,11 +204,11 @@ impl CgfxTexture {
 }
 
 impl CgfxDictValue for CgfxTexture {
-    fn read(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::from_reader(reader)
     }
     
-    fn write(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
         self.to_writer(writer, ctx)
     }
 }

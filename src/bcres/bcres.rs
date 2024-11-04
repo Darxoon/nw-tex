@@ -73,12 +73,12 @@ impl WriteContext {
     }
 }
 
-pub trait CgfxDictValue : Sized {
+pub trait CgfxCollectionValue : Sized {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self>;
     fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()>;
 }
 
-impl CgfxDictValue for () {
+impl CgfxCollectionValue for () {
     fn read_dict_value(_: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(())
     }
@@ -89,7 +89,7 @@ impl CgfxDictValue for () {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct CgfxNode<T: CgfxDictValue> {
+pub struct CgfxNode<T: CgfxCollectionValue> {
     pub reference_bit: u32,
     pub left_node_index: u16,
     pub right_node_index: u16,
@@ -102,7 +102,7 @@ pub struct CgfxNode<T: CgfxDictValue> {
     value_pointer: Option<Pointer>,
 }
 
-impl<T: CgfxDictValue> CgfxNode<T> {
+impl<T: CgfxCollectionValue> CgfxNode<T> {
     pub fn from_reader(reader: &mut impl Read, start_file_offset: Pointer) -> Result<Self> {
         let file_offset = start_file_offset;
         
@@ -148,14 +148,14 @@ impl<T: CgfxDictValue> CgfxNode<T> {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct CgfxDict<T: CgfxDictValue> {
+pub struct CgfxDict<T: CgfxCollectionValue> {
     pub magic_number: String,
     pub tree_length: u32,
     pub values_count: u32,
     pub nodes: Vec<CgfxNode<T>>,
 }
 
-impl<T: CgfxDictValue> CgfxDict<T> {
+impl<T: CgfxCollectionValue> CgfxDict<T> {
     pub fn from_buffer(buffer: &[u8], start_position: Pointer) -> Result<Self> {
         let mut cursor = Cursor::new(buffer);
         cursor.set_position(start_position.into());

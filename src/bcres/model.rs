@@ -10,7 +10,7 @@ use crate::util::{
 };
 
 use super::{
-    bcres::{CgfxDict, CgfxDictValue, WriteContext},
+    bcres::{CgfxDict, CgfxCollectionValue, WriteContext},
     image_codec::RgbaColor,
     util::{brw_relative_pointer, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
 };
@@ -147,7 +147,7 @@ impl CgfxModel {
     }
 }
 
-impl CgfxDictValue for CgfxModel {
+impl CgfxCollectionValue for CgfxModel {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::from_reader(reader)
     }
@@ -191,7 +191,7 @@ pub struct Material {
     // ...
 }
 
-impl CgfxDictValue for Material {
+impl CgfxCollectionValue for Material {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Ok(Self::read(reader)?)
     }
@@ -246,6 +246,18 @@ pub struct Shape {
     bounding_box_ptr: Option<Pointer>,
     
     pub position_offset: Vec3,
+
+    sub_mesh_count: u32,
+    #[br(parse_with = brw_relative_pointer)]
+    #[bw(map = |_| 0u32)]
+    sub_mesh_ptr: Option<Pointer>,
+
+    pub base_address: u32,
+
+    vertex_buffer_count: u32,
+    #[br(parse_with = brw_relative_pointer)]
+    #[bw(map = |_| 0u32)]
+    vertex_buffer_ptr: Option<Pointer>,
 }
 
 #[derive(Clone, Debug, BinRead, BinWrite)]

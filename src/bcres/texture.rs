@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::util::pointer::Pointer;
 
-use super::{bcres::{CgfxDictValue, WriteContext}, util::{brw_relative_pointer, CgfxObjectHeader}};
+use super::{bcres::{CgfxCollectionValue, WriteContext}, util::{brw_relative_pointer, CgfxObjectHeader}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
 #[brw(repr(u32), little)]
@@ -203,7 +203,7 @@ impl CgfxTexture {
     }
 }
 
-impl CgfxDictValue for CgfxTexture {
+impl CgfxCollectionValue for CgfxTexture {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::from_reader(reader)
     }

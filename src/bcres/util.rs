@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
     slice,
     str::from_utf8,
 };
@@ -10,12 +10,12 @@ use binrw::{
     meta::{EndianKind, ReadEndian, WriteEndian},
     parser, writer, BinRead, BinResult, BinWrite, Endian,
 };
-use byteorder::ReadBytesExt;
+use byteorder::{LittleEndian, ReadBytesExt};
 use na::Matrix3x4;
 
 use crate::util::{math::Vec3, pointer::Pointer};
 
-use super::bcres::CgfxDict;
+use super::bcres::{CgfxCollectionValue, CgfxDict};
 
 #[allow(path_statements)] // to disable warning on `endian;`
 #[parser(reader, endian)]
@@ -93,6 +93,28 @@ pub fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     }
     
     Ok(Some(Pointer::from(reader_pos + pointer)))
+}
+
+pub fn read__pointer_list<T: CgfxCollectionValue, R: Read + Seek>(reader: &mut R) -> Result<Vec<T>> {
+    let count = reader.read_u32::<LittleEndian>()?;
+    let list_ptr = Pointer::read(reader)?;
+    
+    let meshes: Option<Vec<T>> = if let Some(list_ptr) = list_ptr {
+        let reader_pos = reader.stream_position()?;
+        let mut meshes: Vec<T> = Vec::with_capacity(count as usize);
+        
+        temp_reader.set_position(reader.position() + u64::from(list_ptr) - 4);
+        
+        for _ in 0..count {
+            let mesh_ptr = Pointer::read(&mut temp_reader)?.unwrap();
+            mesh_reader.set_position(temp_reader.position() + u64::from(mesh_ptr) - 4);
+            assert!(mesh_reader.read_u32::<LittleEndian>()? == 0x01000000);
+            meshes.push(T::read(&mut mesh_reader)?);
+        }
+        Ok(meshes)
+    } else {
+        Ok(Vec::new())
+    };
 }
 
 #[derive(Debug, Clone, BinRead, BinWrite)]

@@ -5,7 +5,7 @@ use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
-use crate::util::pointer::Pointer;
+use crate::{scoped_reader_pos, util::pointer::Pointer};
 
 use super::{bcres::{CgfxCollectionValue, WriteContext}, util::{brw_relative_pointer, CgfxObjectHeader}};
 
@@ -114,14 +114,14 @@ fn image_data(reader: &mut Cursor<&[u8]>) -> Result<Option<ImageData>> {
     
     let data = image_data_pointer
         .map(|pointer| {
-            let mut data_reader = reader.clone();
-            data_reader.seek(SeekFrom::Current(i64::from(pointer) - 4))?;
+            scoped_reader_pos!(reader);
+            reader.seek(SeekFrom::Current(i64::from(pointer) - 4))?;
             
-            let mut data = ImageData::read(&mut data_reader)?;
-            data_reader.set_position(data.buffer_pointer.unwrap().into());
+            let mut data = ImageData::read(reader)?;
+            reader.set_position(data.buffer_pointer.unwrap().into());
             
             let mut image_bytes: Vec<u8> = vec![0; data.buffer_length.try_into()?];
-            data_reader.read_exact(&mut image_bytes)?;
+            reader.read_exact(&mut image_bytes)?;
             data.image_bytes = image_bytes;
             
             Ok::<ImageData, Error>(data)

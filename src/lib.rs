@@ -52,6 +52,36 @@ macro_rules! assert_matching {
 	};
 }
 
+pub struct ReaderGuard<'a, R: Read + Seek> {
+    pub reader: &'a mut R,
+    start_pos: u64,
+}
+
+impl<'a, R: Read + Seek> ReaderGuard<'a, R> {
+    pub fn new(reader: &'a mut R) -> Result<Self> {
+        let start_pos = reader.stream_position()?;
+        
+        Ok(Self {
+            reader,
+            start_pos,
+        })
+    }
+}
+
+impl<'a, R: Read + Seek> Drop for ReaderGuard<'a, R> {
+    fn drop(&mut self) {
+        self.reader.seek(SeekFrom::Start(self.start_pos)).unwrap();
+    }
+}
+
+#[macro_export]
+macro_rules! scoped_reader_pos {
+    ($reader:ident) => {
+        let guard = crate::ReaderGuard::new($reader)?;
+        let $reader = &mut *guard.reader;
+    };
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryItem {
 	pub id: String,

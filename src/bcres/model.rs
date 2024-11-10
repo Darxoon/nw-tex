@@ -4,10 +4,10 @@ use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::util::{
+use crate::{scoped_reader_pos, util::{
     math::{Matrix3x3, SerializableMatrix, Vec3, Vec4},
     pointer::Pointer,
-};
+}};
 
 use super::{
     bcres::{CgfxCollectionValue, CgfxDict, WriteContext},
@@ -41,8 +41,6 @@ pub enum CgfxModel {
 
 impl CgfxModel {
     pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
-        let mut temp_reader = reader.clone();
-        
         let discriminant = reader.read_u32::<LittleEndian>()?;
         let cgfx_object_header = CgfxObjectHeader::read(reader)?;
         let cgfx_node_header = CgfxNodeHeader::read(reader)?;
@@ -58,8 +56,9 @@ impl CgfxModel {
         let material_ptr = Pointer::read(reader)?;
         
         let materials = if let Some(material_ptr) = material_ptr {
-            temp_reader.set_position(reader.position() + u64::from(material_ptr) - 4);
-            let dict: CgfxDict<Material> = CgfxDict::from_reader(&mut temp_reader)?;
+            scoped_reader_pos!(reader);
+            reader.set_position(reader.position() + u64::from(material_ptr) - 4);
+            let dict: CgfxDict<Material> = CgfxDict::from_reader(reader)?;
             
             assert!(dict.values_count == material_count);
             Some(dict)
@@ -75,8 +74,9 @@ impl CgfxModel {
         let mesh_node_visibility_ptr = Pointer::read(reader)?;
         
         let mesh_node_visibilities = if let Some(mesh_node_visibility_ptr) = mesh_node_visibility_ptr {
-            temp_reader.set_position(reader.position() + u64::from(mesh_node_visibility_ptr) - 4);
-            let dict: CgfxDict<()> = CgfxDict::from_reader(&mut temp_reader)?;
+            scoped_reader_pos!(reader);
+            reader.set_position(reader.position() + u64::from(mesh_node_visibility_ptr) - 4);
+            let dict: CgfxDict<()> = CgfxDict::from_reader(reader)?;
             
             assert!(dict.values_count == mesh_node_visibility_count);
             Some(dict)
@@ -195,7 +195,7 @@ pub struct Shape {
     pub bounding_box: Option<BoundingBox>,
     pub position_offset: Vec3,
     
-    pub sub_meshes: Option<Vec<()>>,
+    pub sub_meshes: Option<Vec<SubMesh>>,
     pub base_address: u32,
     pub vertex_buffers: Option<Vec<()>>,
     
@@ -211,20 +211,16 @@ impl Shape {
         
         let bounding_box_ptr = Pointer::read_relative(reader)?;
         let bounding_box = if let Some(bounding_box_ptr) = bounding_box_ptr {
-            let reader_pos = reader.stream_position()?;
+            scoped_reader_pos!(reader);
             reader.seek(SeekFrom::Start(bounding_box_ptr.into()))?;
-            
-            let bounding_box = BoundingBox::read(reader)?;
-            
-            reader.seek(SeekFrom::Start(reader_pos))?;
-            Some(bounding_box)
+            Some(BoundingBox::read(reader)?)
         } else {
             None
         };
         
         let position_offset = Vec3::read(reader)?;
         
-        let sub_meshes: Option<Vec<()>> = read_pointer_list(reader, None)?;
+        let sub_meshes: Option<Vec<SubMesh>> = read_pointer_list(reader, None)?;
         let base_address = reader.read_u32::<LittleEndian>()?;
         let vertex_buffers: Option<Vec<()>> = read_pointer_list(reader, None)?;
         
@@ -264,3 +260,127 @@ pub struct BoundingBox {
     pub orientation: Matrix3x3<f32>,
     pub size: Vec3,
 }
+
+#[derive(Clone, Copy, Debug, BinRead, BinWrite)]
+#[brw(repr = u32, little)]
+pub enum SubMeshSkinning {
+    None,
+    Rigid,
+    Smooth,
+}
+
+#[derive(Clone, Debug)]
+pub struct SubMesh {
+    pub bone_indices: Option<Vec<u32>>,
+    pub skinning: SubMeshSkinning,
+    pub faces: Option<Vec<()>>,
+}
+
+impl SubMesh {
+    pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let bone_index_count = reader.read_u32::<LittleEndian>()?;
+        let bone_index_ptr = Pointer::read_relative(reader)?;
+        
+        let bone_indices = if let Some(bone_index_ptr) = bone_index_ptr {
+            scoped_reader_pos!(reader);
+            
+            let mut bone_indices = Vec::new();
+            bone_indices.resize(bone_index_count as usize, 0);
+            
+            reader.seek(SeekFrom::Start(bone_index_ptr.into()))?;
+            reader.read_u32_into::<LittleEndian>(&mut bone_indices)?;
+            Some(bone_indices)
+        } else {
+            None
+        };
+        
+        let skinning: SubMeshSkinning = SubMeshSkinning::read(reader)?;
+        let faces: Option<Vec<()>> = read_pointer_list(reader, None)?;
+
+        Ok(Self {
+            bone_indices,
+            skinning,
+            faces,
+        })
+    }
+    
+    pub fn to_writer(&self, _writer: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+}
+
+impl CgfxCollectionValue for SubMesh {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
+}
+
+pub struct VertexBufferCommon {
+    pub attribute_name: AttributeName,
+    pub vertex_buffer_type: VertexBufferType,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
+#[brw(little, repr = u32)]
+pub enum AttributeName {
+    Position,
+    Normal,
+    Tangent,
+    Color,
+    TexCoord0,
+    TexCoord1,
+    TexCoord2,
+    BoneIndex,
+    BoneWeight,
+    UserAttribute0,
+    UserAttribute1,
+    UserAttribute2,
+    UserAttribute3,
+    UserAttribute4,
+    UserAttribute5,
+    UserAttribute6,
+    UserAttribute7,
+    UserAttribute8,
+    UserAttribute9,
+    UserAttribute10,
+    UserAttribute11,
+    Interleave,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
+#[brw(little, repr = u32)]
+pub enum VertexBufferType {
+    // TODO: is this necessary? this seems redundant
+    None,
+    Fixed,
+    Interleaved,
+}
+
+pub enum VertexBuffer {
+    Attribute(VertexBufferAttribute),
+    Interleaved(VertexBufferInterleaved),
+    Fixed(VertexBufferFixed),
+}
+
+#[derive(Clone, Debug, BinRead)]
+#[brw(little)]
+pub struct VertexBufferAttribute {
+    
+}
+
+#[derive(Clone, Debug, BinRead)]
+#[brw(little)]
+pub struct VertexBufferInterleaved {
+    
+}
+
+#[derive(Clone, Debug, BinRead)]
+#[brw(little)]
+pub struct VertexBufferFixed {
+    
+}
+

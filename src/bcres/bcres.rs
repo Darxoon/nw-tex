@@ -1,10 +1,10 @@
-use std::{collections::HashMap, io::{Cursor, Read, Write}, str::from_utf8};
+use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}, str::from_utf8};
 
 use anyhow::Result;
 use binrw::{meta::{ReadEndian, WriteEndian}, BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{assert_matching, get_4_byte_string, util::pointer::Pointer, write_at_pointer};
+use crate::{assert_matching, get_4_byte_string, scoped_reader_pos, util::pointer::Pointer, write_at_pointer};
 
 use super::{model::CgfxModel, texture::CgfxTexture};
 
@@ -183,21 +183,21 @@ impl<T: CgfxCollectionValue> CgfxDict<T> {
         
         for node in &mut nodes {
             if let Some(name_pointer) = node.name_pointer {
+                scoped_reader_pos!(reader);
+                
                 let string_offset: Pointer = node.file_offset + 8 + name_pointer;
+                reader.seek(SeekFrom::Start(string_offset.into()))?;
                 
-                let mut string_reader = reader.clone();
-                string_reader.set_position(string_offset.into());
-                
-                node.name = Some(read_string(&mut string_reader)?);
+                node.name = Some(read_string(reader)?);
             }
             
             if let Some(value_pointer) = node.value_pointer {
+                scoped_reader_pos!(reader);
+                
                 let value_offset: Pointer = node.file_offset + 12 + value_pointer;
+                reader.seek(SeekFrom::Start(value_offset.into()))?;
                 
-                let mut value_reader = reader.clone();
-                value_reader.set_position(value_offset.into());
-                
-                node.value = Some(T::read_dict_value(&mut value_reader)?);
+                node.value = Some(T::read_dict_value(reader)?);
             }
         }
         

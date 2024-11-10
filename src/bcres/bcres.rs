@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::{Cursor, Read, Write}, str::from_utf8};
 
 use anyhow::Result;
-use binrw::{BinRead, BinWrite};
+use binrw::{meta::{ReadEndian, WriteEndian}, BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::{assert_matching, get_4_byte_string, util::pointer::Pointer, write_at_pointer};
@@ -74,16 +74,23 @@ impl WriteContext {
 }
 
 pub trait CgfxCollectionValue : Sized {
+    // TODO: migrate this to use impl Read + Seek instead of Cursor
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self>;
     fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()>;
 }
 
-impl CgfxCollectionValue for () {
-    fn read_dict_value(_: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(())
+// auto implement CgfxCollectionValue for all binrw types
+impl<T: BinRead + BinWrite + ReadEndian + WriteEndian> CgfxCollectionValue for T
+where 
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'a> <T as BinWrite>::Args<'a>: Default,
+{
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Ok(Self::read(reader)?)
     }
-    
-    fn write_dict_value(&self, _: &mut Cursor<&mut Vec<u8>>, _: &mut  WriteContext) -> Result<()> {
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _ctx: &mut WriteContext) -> Result<()> {
+        self.write(writer)?;
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{Cursor, Seek, SeekFrom};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
@@ -10,9 +10,9 @@ use crate::util::{
 };
 
 use super::{
-    bcres::{CgfxDict, CgfxCollectionValue, WriteContext},
+    bcres::{CgfxCollectionValue, CgfxDict, WriteContext},
     image_codec::RgbaColor,
-    util::{brw_relative_pointer, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
+    util::{read_pointer_list, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
 };
 
 #[derive(Debug, Clone)]
@@ -51,25 +51,7 @@ impl CgfxModel {
         // TODO: anim groups in node header
         
         // meshes
-        let mesh_count = reader.read_u32::<LittleEndian>()?;
-        let mesh_ptr = Pointer::read(reader)?;
-        
-        let meshes: Option<Vec<Mesh>> = if let Some(mesh_arr_ptr) = mesh_ptr {
-            let mut mesh_reader = reader.clone();
-            let mut meshes: Vec<Mesh> = Vec::with_capacity(mesh_count as usize);
-            
-            temp_reader.set_position(reader.position() + u64::from(mesh_arr_ptr) - 4);
-            
-            for _ in 0..mesh_count {
-                let mesh_ptr = Pointer::read(&mut temp_reader)?.unwrap();
-                mesh_reader.set_position(temp_reader.position() + u64::from(mesh_ptr) - 4);
-                assert!(mesh_reader.read_u32::<LittleEndian>()? == 0x01000000);
-                meshes.push(Mesh::read(&mut mesh_reader)?);
-            }
-            Some(meshes)
-        } else {
-            None
-        };
+        let meshes: Option<Vec<Mesh>> = read_pointer_list(reader, None)?;
         
         // materials
         let material_count = reader.read_u32::<LittleEndian>()?;
@@ -86,24 +68,7 @@ impl CgfxModel {
         };
         
         // shapes
-        let shape_count = reader.read_u32::<LittleEndian>()?;
-        let shape_ptr = Pointer::read(reader)?;
-        
-        let shapes: Option<Vec<Shape>> = if let Some(shape_arr_ptr) = shape_ptr {
-            let mut shape_reader = reader.clone();
-            let mut shapes: Vec<Shape> = Vec::with_capacity(shape_count as usize);
-            
-            temp_reader.set_position(reader.position() + u64::from(shape_arr_ptr) - 4);
-            
-            for _ in 0..shape_count {
-                let shape_ptr = Pointer::read(&mut temp_reader)?.unwrap();
-                shape_reader.set_position(temp_reader.position() + u64::from(shape_ptr) - 4);
-                shapes.push(Shape::read(&mut shape_reader)?);
-            }
-            Some(shapes)
-        } else {
-            None
-        };
+        let shapes: Option<Vec<Shape>> = read_pointer_list(reader, None)?;
         
         // mesh node visibilities
         let mesh_node_visibility_count = reader.read_u32::<LittleEndian>()?;
@@ -118,7 +83,6 @@ impl CgfxModel {
         } else {
             None
         };
-        
         
         let flags = reader.read_u32::<LittleEndian>()?;
         let face_culling = reader.read_u32::<LittleEndian>()?;
@@ -152,13 +116,13 @@ impl CgfxCollectionValue for CgfxModel {
         Self::from_reader(reader)
     }
 
-    fn write_dict_value(&self, _writer: &mut Cursor<&mut Vec<u8>>, _ctx: &mut super::bcres::WriteContext) -> Result<()> {
+    fn write_dict_value(&self, _writer: &mut Cursor<&mut Vec<u8>>, _ctx: &mut WriteContext) -> Result<()> {
         todo!()
     }
 }
 
 #[derive(Clone, Debug, BinRead, BinWrite)]
-#[brw(little)]
+#[brw(little, magic = 0x01000000u32)]
 pub struct Mesh {
     // object header
     pub cgfx_object_header: CgfxObjectHeader,
@@ -191,17 +155,6 @@ pub struct Material {
     // ...
 }
 
-impl CgfxCollectionValue for Material {
-    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::read(reader)?)
-    }
-
-    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _ctx: &mut WriteContext) -> Result<()> {
-        self.write(writer)?;
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug, BinRead, BinWrite)]
 #[brw(little)]
 pub struct MaterialColors {
@@ -232,32 +185,73 @@ pub struct MaterialColors {
     pub command_cache: u32,
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
-#[brw(little, magic = 0x10000001u32)]
+#[derive(Clone, Debug)]
 pub struct Shape {
     // object header
     pub cgfx_object_header: CgfxObjectHeader,
     
     // shape data
     pub flags: u32,
-    
-    #[br(parse_with = brw_relative_pointer)]
-    #[bw(map = |_| 0u32)]
-    bounding_box_ptr: Option<Pointer>,
-    
+    pub bounding_box: Option<BoundingBox>,
     pub position_offset: Vec3,
-
-    sub_mesh_count: u32,
-    #[br(parse_with = brw_relative_pointer)]
-    #[bw(map = |_| 0u32)]
-    sub_mesh_ptr: Option<Pointer>,
-
+    
+    pub sub_meshes: Option<Vec<()>>,
     pub base_address: u32,
+    pub vertex_buffers: Option<Vec<()>>,
+    
+    // TODO: blend shape
+}
 
-    vertex_buffer_count: u32,
-    #[br(parse_with = brw_relative_pointer)]
-    #[bw(map = |_| 0u32)]
-    vertex_buffer_ptr: Option<Pointer>,
+impl Shape {
+    pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        assert!(reader.read_u32::<LittleEndian>()? == 0x10000001);
+        
+        let cgfx_object_header = CgfxObjectHeader::read(reader)?;
+        let flags = reader.read_u32::<LittleEndian>()?;
+        
+        let bounding_box_ptr = Pointer::read_relative(reader)?;
+        let bounding_box = if let Some(bounding_box_ptr) = bounding_box_ptr {
+            let reader_pos = reader.stream_position()?;
+            reader.seek(SeekFrom::Start(bounding_box_ptr.into()))?;
+            
+            let bounding_box = BoundingBox::read(reader)?;
+            
+            reader.seek(SeekFrom::Start(reader_pos))?;
+            Some(bounding_box)
+        } else {
+            None
+        };
+        
+        let position_offset = Vec3::read(reader)?;
+        
+        let sub_meshes: Option<Vec<()>> = read_pointer_list(reader, None)?;
+        let base_address = reader.read_u32::<LittleEndian>()?;
+        let vertex_buffers: Option<Vec<()>> = read_pointer_list(reader, None)?;
+        
+        Ok(Self {
+            cgfx_object_header,
+            flags,
+            bounding_box,
+            position_offset,
+            sub_meshes,
+            base_address,
+            vertex_buffers,
+        })
+    }
+    
+    pub fn to_writer(&self, _writer: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+}
+
+impl CgfxCollectionValue for Shape {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
 }
 
 #[derive(Clone, Debug, BinRead, BinWrite)]

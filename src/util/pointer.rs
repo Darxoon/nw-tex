@@ -1,5 +1,5 @@
 // darxoon's small pointer utility v1
-use std::{io::{Read, Write, Cursor}, fmt::Debug, ops::{Add, Sub}, result, num::TryFromIntError};
+use std::{fmt::Debug, io::{Cursor, Read, Seek, Write}, num::TryFromIntError, ops::{Add, Sub}, result};
 
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
@@ -96,6 +96,17 @@ impl Pointer {
         
         if value != 0 {
             Ok(Some(Pointer(value)))
+        } else {
+            Ok(None)
+        }
+    }
+    
+    pub fn read_relative<R: Read + Seek>(reader: &mut R) -> Result<Option<Pointer>> {
+        let reader_pos = reader.stream_position()?;
+        let value = reader.read_u32::<LittleEndian>()?;
+        
+        if value != 0 {
+            Ok(Some(Pointer(value) + reader_pos))
         } else {
             Ok(None)
         }

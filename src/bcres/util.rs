@@ -95,7 +95,7 @@ pub fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     Ok(Some(Pointer::from(reader_pos + pointer)))
 }
 
-pub fn read__pointer_list<T: CgfxCollectionValue, R: Read + Seek>(reader: &mut R) -> Result<Vec<T>> {
+pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, magic: Option<u32>) -> Result<Option<Vec<T>>> {
     let count = reader.read_u32::<LittleEndian>()?;
     let list_ptr = Pointer::read(reader)?;
     
@@ -103,18 +103,30 @@ pub fn read__pointer_list<T: CgfxCollectionValue, R: Read + Seek>(reader: &mut R
         let reader_pos = reader.stream_position()?;
         let mut meshes: Vec<T> = Vec::with_capacity(count as usize);
         
-        temp_reader.set_position(reader.position() + u64::from(list_ptr) - 4);
+        reader.seek(SeekFrom::Current(i64::from(list_ptr) - 4))?;
+        let object_pointers: Vec<Option<Pointer>> = (0..count)
+            .map(|_| Pointer::read_relative(reader))
+            .collect::<Result<Vec<Option<Pointer>>>>()?;
         
-        for _ in 0..count {
-            let mesh_ptr = Pointer::read(&mut temp_reader)?.unwrap();
-            mesh_reader.set_position(temp_reader.position() + u64::from(mesh_ptr) - 4);
-            assert!(mesh_reader.read_u32::<LittleEndian>()? == 0x01000000);
-            meshes.push(T::read(&mut mesh_reader)?);
+        for object_pointer in object_pointers {
+            if let Some(object_pointer) = object_pointer {
+                reader.seek(SeekFrom::Start(object_pointer.into()))?;
+                
+                if let Some(magic) = magic {
+                    assert!(reader.read_u32::<LittleEndian>()? == magic);
+                }
+                
+                meshes.push(T::read_dict_value(reader)?);
+            }
         }
-        Ok(meshes)
+        
+        reader.seek(SeekFrom::Start(reader_pos))?;
+        Some(meshes)
     } else {
-        Ok(Vec::new())
+        None
     };
+    
+    Ok(meshes)
 }
 
 #[derive(Debug, Clone, BinRead, BinWrite)]

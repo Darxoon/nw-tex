@@ -80,17 +80,17 @@ pub trait CgfxCollectionValue : Sized {
 }
 
 // auto implement CgfxCollectionValue for all binrw types
-impl<T: BinRead + BinWrite + ReadEndian + WriteEndian> CgfxCollectionValue for T
+impl<T: BinRead + BinWrite> CgfxCollectionValue for T
 where 
     for<'a> <T as BinRead>::Args<'a>: Default,
     for<'a> <T as BinWrite>::Args<'a>: Default,
 {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
-        Ok(Self::read(reader)?)
+        Ok(Self::read_le(reader)?)
     }
 
     fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _ctx: &mut WriteContext) -> Result<()> {
-        self.write(writer)?;
+        self.write_le(writer)?;
         Ok(())
     }
 }

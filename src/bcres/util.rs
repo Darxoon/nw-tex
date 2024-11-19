@@ -95,7 +95,11 @@ pub fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
     Ok(Some(Pointer::from(reader_pos + pointer)))
 }
 
-pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, magic: Option<u32>) -> Result<Option<Vec<T>>> {
+pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>) -> Result<Option<Vec<T>>> {
+    read_pointer_list_magic(reader, None)
+}
+
+pub fn read_pointer_list_magic<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, magic: Option<u32>) -> Result<Option<Vec<T>>> {
     let count = reader.read_u32::<LittleEndian>()?;
     let list_ptr = Pointer::read_relative(reader)?;
     println!("a {:?}", list_ptr);

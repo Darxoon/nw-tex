@@ -1,4 +1,4 @@
-use std::{default, io::{Cursor, Seek, SeekFrom}};
+use std::io::{Cursor, Seek, SeekFrom};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
@@ -12,7 +12,7 @@ use crate::{scoped_reader_pos, util::{
 use super::{
     bcres::{CgfxCollectionValue, CgfxDict, WriteContext},
     image_codec::RgbaColor,
-    util::{read_inline_list, read_pointer_list, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
+    util::{read_inline_list, read_pointer_list, read_pointer_list_magic, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
 };
 
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ pub struct CgfxModelCommon {
     pub meshes: Option<Vec<Mesh>>,
     pub materials: Option<CgfxDict<Material>>,
     pub shapes: Option<Vec<Shape>>,
-    pub mesh_node_visibilities: Option<CgfxDict<()>>,
+    pub mesh_node_visibilities: Option<CgfxDict<()>>, // TODO: implement
     
     pub flags: u32,
     pub face_culling: u32,
@@ -49,7 +49,7 @@ impl CgfxModel {
         // TODO: anim groups in node header
         
         // meshes
-        let meshes: Option<Vec<Mesh>> = read_pointer_list(reader, None)?;
+        let meshes: Option<Vec<Mesh>> = read_pointer_list(reader)?;
         
         // materials
         let material_count = reader.read_u32::<LittleEndian>()?;
@@ -67,7 +67,7 @@ impl CgfxModel {
         };
         
         // shapes
-        let shapes: Option<Vec<Shape>> = read_pointer_list(reader, None)?;
+        let shapes: Option<Vec<Shape>> = read_pointer_list(reader)?;
         
         // mesh node visibilities
         let mesh_node_visibility_count = reader.read_u32::<LittleEndian>()?;
@@ -220,9 +220,9 @@ impl Shape {
         
         let position_offset = Vec3::read(reader)?;
         
-        let sub_meshes: Option<Vec<SubMesh>> = read_pointer_list(reader, None)?;
+        let sub_meshes: Option<Vec<SubMesh>> = read_pointer_list(reader)?;
         let base_address = reader.read_u32::<LittleEndian>()?;
-        let vertex_buffers: Option<Vec<VertexBuffer>> = read_pointer_list(reader, None)?;
+        let vertex_buffers: Option<Vec<VertexBuffer>> = read_pointer_list(reader)?;
         
         Ok(Self {
             cgfx_object_header,
@@ -273,7 +273,7 @@ pub enum SubMeshSkinning {
 pub struct SubMesh {
     pub bone_indices: Option<Vec<u32>>,
     pub skinning: SubMeshSkinning,
-    pub faces: Option<Vec<()>>,
+    pub faces: Option<Vec<()>>, // TODO: implement
 }
 
 impl SubMesh {
@@ -295,7 +295,7 @@ impl SubMesh {
         };
         
         let skinning: SubMeshSkinning = SubMeshSkinning::read(reader)?;
-        let faces: Option<Vec<()>> = read_pointer_list(reader, None)?;
+        let faces: Option<Vec<()>> = read_pointer_list(reader)?;
 
         Ok(Self {
             bone_indices,
@@ -376,7 +376,7 @@ impl VertexBuffer {
         let vertex_buffer = match discriminant {
             0x40000001 => Self::Attribute(VertexBufferAttribute::from_reader(reader)?),
             0x40000002 => Self::Interleaved(VertexBufferInterleaved::from_reader(reader)?),
-            0x80000000 => todo!(),
+            0x80000000 => Self::Fixed(VertexBufferFixed::from_reader(reader)?),
             _ => return Err(anyhow!("Invalid model type discriminant {:x}", discriminant)),
         };
         
@@ -456,7 +456,7 @@ impl CgfxCollectionValue for VertexBufferAttribute {
         Self::from_reader(reader)
     }
 
-    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
         self.to_writer(writer)
     }
 }
@@ -489,7 +489,7 @@ impl VertexBufferInterleaved {
         let memory_area = reader.read_u32::<LittleEndian>()?;
         
         let vertex_stride = reader.read_u32::<LittleEndian>()?;
-        let attributes: Option<Vec<VertexBufferAttribute>> = read_pointer_list(reader, None)?;
+        let attributes: Option<Vec<VertexBufferAttribute>> = read_pointer_list_magic(reader, Some(0x40000001))?;
         
         Ok(Self {
             vertex_buffer_common,
@@ -504,10 +504,42 @@ impl VertexBufferInterleaved {
     }
 }
 
-#[derive(Clone, Debug, BinRead)]
-#[brw(little)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
+#[brw(little, repr = u32)]
+pub enum GlDataType {
+    Byte = 0x1400,
+    UByte = 0x1401,
+    Short = 0x1402,
+    UShort = 0x1403,
+    Float = 0x1406,
+    Fixed = 0x140C,
+}
+
+#[derive(Clone, Debug)]
 pub struct VertexBufferFixed {
     pub vertex_buffer_common: VertexBufferCommon,
     
+    pub format: GlDataType,
+    pub elements: u32,
+    pub scale: f32,
+    pub vector: Option<Vec<f32>>,
+}
+
+impl VertexBufferFixed {
+    pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let vertex_buffer_common = VertexBufferCommon::read(reader)?;
+        let format = GlDataType::read(reader)?;
+        let elements = reader.read_u32::<LittleEndian>()?;
+        let scale = reader.read_f32::<LittleEndian>()?;
+        let vector: Option<Vec<f32>> = read_inline_list(reader)?;
+
+        Ok(Self {
+            vertex_buffer_common,
+            format,
+            elements,
+            scale,
+            vector,
+        })
+    }
 }
 

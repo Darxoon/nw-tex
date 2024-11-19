@@ -1,4 +1,4 @@
-use std::io::{Cursor, Seek, SeekFrom};
+use std::{default, io::{Cursor, Seek, SeekFrom}};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
@@ -12,7 +12,7 @@ use crate::{scoped_reader_pos, util::{
 use super::{
     bcres::{CgfxCollectionValue, CgfxDict, WriteContext},
     image_codec::RgbaColor,
-    util::{read_pointer_list, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
+    util::{read_inline_list, read_pointer_list, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
 };
 
 #[derive(Debug, Clone)]
@@ -197,7 +197,7 @@ pub struct Shape {
     
     pub sub_meshes: Option<Vec<SubMesh>>,
     pub base_address: u32,
-    pub vertex_buffers: Option<Vec<()>>,
+    pub vertex_buffers: Option<Vec<VertexBuffer>>,
     
     // TODO: blend shape
 }
@@ -222,7 +222,7 @@ impl Shape {
         
         let sub_meshes: Option<Vec<SubMesh>> = read_pointer_list(reader, None)?;
         let base_address = reader.read_u32::<LittleEndian>()?;
-        let vertex_buffers: Option<Vec<()>> = read_pointer_list(reader, None)?;
+        let vertex_buffers: Option<Vec<VertexBuffer>> = read_pointer_list(reader, None)?;
         
         Ok(Self {
             cgfx_object_header,
@@ -319,6 +319,8 @@ impl CgfxCollectionValue for SubMesh {
     }
 }
 
+#[derive(Clone, Debug, BinRead, BinWrite)]
+#[brw(little)]
 pub struct VertexBufferCommon {
     pub attribute_name: AttributeName,
     pub vertex_buffer_type: VertexBufferType,
@@ -360,27 +362,152 @@ pub enum VertexBufferType {
     Interleaved,
 }
 
+#[derive(Clone, Debug)]
 pub enum VertexBuffer {
     Attribute(VertexBufferAttribute),
     Interleaved(VertexBufferInterleaved),
     Fixed(VertexBufferFixed),
 }
 
-#[derive(Clone, Debug, BinRead)]
-#[brw(little)]
-pub struct VertexBufferAttribute {
+impl VertexBuffer {
+    fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let discriminant = reader.read_u32::<LittleEndian>()?;
+        
+        let vertex_buffer = match discriminant {
+            0x40000001 => Self::Attribute(VertexBufferAttribute::from_reader(reader)?),
+            0x40000002 => Self::Interleaved(VertexBufferInterleaved::from_reader(reader)?),
+            0x80000000 => todo!(),
+            _ => return Err(anyhow!("Invalid model type discriminant {:x}", discriminant)),
+        };
+        
+        Ok(vertex_buffer)
+    }
     
+    fn to_writer(&self, _writer: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
 }
 
-#[derive(Clone, Debug, BinRead)]
-#[brw(little)]
-pub struct VertexBufferInterleaved {
+impl CgfxCollectionValue for VertexBuffer {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct VertexBufferAttribute {
+    pub vertex_buffer_common: VertexBufferCommon,
     
+    pub buffer_obj: u32,
+    pub location_flag: u32,
+    
+    pub raw_bytes: Option<Vec<u8>>,
+    
+    pub location_ptr: u32,
+    pub memory_area: u32,
+    
+    pub format: u32,
+    pub elements: u32,
+    pub scale: f32,
+    pub offset: u32,
+}
+
+impl VertexBufferAttribute {
+    fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let vertex_buffer_common = VertexBufferCommon::read(reader)?;
+        let buffer_obj = reader.read_u32::<LittleEndian>()?;
+        let location_flag = reader.read_u32::<LittleEndian>()?;
+        
+        let raw_bytes: Option<Vec<u8>> = read_inline_list(reader)?;
+        
+        let location_ptr = reader.read_u32::<LittleEndian>()?;
+        let memory_area = reader.read_u32::<LittleEndian>()?;
+        
+        let format = reader.read_u32::<LittleEndian>()?;
+        let elements = reader.read_u32::<LittleEndian>()?;
+        let scale = reader.read_f32::<LittleEndian>()?;
+        let offset = reader.read_u32::<LittleEndian>()?;
+        
+        Ok(Self {
+            vertex_buffer_common,
+            buffer_obj,
+            location_flag,
+            raw_bytes,
+            location_ptr,
+            memory_area,
+            format,
+            elements,
+            scale,
+            offset,
+        })
+    }
+    
+    fn to_writer(&self, _writer: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+}
+
+impl CgfxCollectionValue for VertexBufferAttribute {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct VertexBufferInterleaved {
+    pub vertex_buffer_common: VertexBufferCommon,
+    
+    pub buffer_obj: u32,
+    pub location_flag: u32,
+    
+    pub raw_bytes: Option<Vec<u8>>,
+    
+    pub location_ptr: u32,
+    pub memory_area: u32,
+    
+    pub vertex_stride: u32,
+    pub attributes: Option<Vec<VertexBufferAttribute>>,
+}
+
+impl VertexBufferInterleaved {
+    fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let vertex_buffer_common = VertexBufferCommon::read(reader)?;
+        let buffer_obj = reader.read_u32::<LittleEndian>()?;
+        let location_flag = reader.read_u32::<LittleEndian>()?;
+        
+        let raw_bytes: Option<Vec<u8>> = read_inline_list(reader)?;
+        
+        let location_ptr = reader.read_u32::<LittleEndian>()?;
+        let memory_area = reader.read_u32::<LittleEndian>()?;
+        
+        let vertex_stride = reader.read_u32::<LittleEndian>()?;
+        let attributes: Option<Vec<VertexBufferAttribute>> = read_pointer_list(reader, None)?;
+        
+        Ok(Self {
+            vertex_buffer_common,
+            buffer_obj,
+            location_flag,
+            raw_bytes,
+            location_ptr,
+            memory_area,
+            vertex_stride,
+            attributes,
+        })
+    }
 }
 
 #[derive(Clone, Debug, BinRead)]
 #[brw(little)]
 pub struct VertexBufferFixed {
+    pub vertex_buffer_common: VertexBufferCommon,
     
 }
 

@@ -13,7 +13,7 @@ use binrw::{
 use byteorder::{LittleEndian, ReadBytesExt};
 use na::Matrix3x4;
 
-use crate::util::{math::Vec3, pointer::Pointer};
+use crate::{scoped_reader_pos, util::{math::Vec3, pointer::Pointer}};
 
 use super::bcres::{CgfxCollectionValue, CgfxDict};
 
@@ -97,13 +97,15 @@ pub fn brw_relative_pointer() -> BinResult<Option<Pointer>> {
 
 pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, magic: Option<u32>) -> Result<Option<Vec<T>>> {
     let count = reader.read_u32::<LittleEndian>()?;
-    let list_ptr = Pointer::read(reader)?;
+    let list_ptr = Pointer::read_relative(reader)?;
+    println!("a {:?}", list_ptr);
     
-    let meshes: Option<Vec<T>> = if let Some(list_ptr) = list_ptr {
-        let reader_pos = reader.stream_position()?;
-        let mut meshes: Vec<T> = Vec::with_capacity(count as usize);
+    let values: Option<Vec<T>> = if let Some(list_ptr) = list_ptr {
+        scoped_reader_pos!(reader);
+        let mut values: Vec<T> = Vec::with_capacity(count as usize);
         
-        reader.seek(SeekFrom::Current(i64::from(list_ptr) - 4))?;
+        reader.seek(SeekFrom::Start(list_ptr.into()))?;
+        
         let object_pointers: Vec<Option<Pointer>> = (0..count)
             .map(|_| Pointer::read_relative(reader))
             .collect::<Result<Vec<Option<Pointer>>>>()?;
@@ -116,17 +118,37 @@ pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, mag
                     assert!(reader.read_u32::<LittleEndian>()? == magic);
                 }
                 
-                meshes.push(T::read_dict_value(reader)?);
+                values.push(T::read_dict_value(reader)?);
             }
         }
         
-        reader.seek(SeekFrom::Start(reader_pos))?;
-        Some(meshes)
+        Some(values)
     } else {
         None
     };
     
-    Ok(meshes)
+    Ok(values)
+}
+
+pub fn read_inline_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>) -> Result<Option<Vec<T>>> {
+    let count = reader.read_u32::<LittleEndian>()?;
+    let list_ptr = Pointer::read(reader)?;
+    
+    let values: Option<Vec<T>> = if let Some(list_ptr) = list_ptr {
+        scoped_reader_pos!(reader);
+        
+        reader.seek(SeekFrom::Current(i64::from(list_ptr) - 4))?;
+        
+        let values: Vec<T> = (0..count)
+            .map(|_| T::read_dict_value(reader))
+            .collect::<Result<Vec<T>>>()?;
+        
+        Some(values)
+    } else {
+        None
+    };
+    
+    Ok(values)
 }
 
 #[derive(Debug, Clone, BinRead, BinWrite)]

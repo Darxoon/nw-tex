@@ -1,4 +1,4 @@
-use std::io::{Cursor, Seek, SeekFrom};
+use std::{io::{Cursor, Seek, SeekFrom}, ops::{Deref, DerefMut}};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
@@ -108,6 +108,20 @@ impl CgfxModel {
         };
         
         Ok(model)
+    }
+
+    pub fn common(&self) -> &CgfxModelCommon {
+        match self {
+            CgfxModel::Standard(common) => common,
+            CgfxModel::Skeletal(common, _) => common,
+        }
+    }
+
+    pub fn common_mut(&mut self) -> &mut CgfxModelCommon {
+        match self {
+            CgfxModel::Standard(common) => common,
+            CgfxModel::Skeletal(common, _) => common,
+        }
     }
 }
 
@@ -355,6 +369,30 @@ pub enum AttributeName {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
 #[brw(little, repr = u32)]
+pub enum GlDataType {
+    Byte = 0x1400,
+    UByte = 0x1401,
+    Short = 0x1402,
+    UShort = 0x1403,
+    Float = 0x1406,
+    Fixed = 0x140C,
+}
+
+impl GlDataType {
+    pub fn byte_size(self) -> u32 {
+        match self {
+            GlDataType::Byte => 1,
+            GlDataType::UByte => 1,
+            GlDataType::Short => 2,
+            GlDataType::UShort => 2,
+            GlDataType::Float => 4,
+            GlDataType::Fixed => todo!(), // wtf is Fixed?
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
+#[brw(little, repr = u32)]
 pub enum VertexBufferType {
     // TODO: is this necessary? this seems redundant
     None,
@@ -410,7 +448,7 @@ pub struct VertexBufferAttribute {
     pub location_ptr: u32,
     pub memory_area: u32,
     
-    pub format: u32,
+    pub format: GlDataType,
     pub elements: u32,
     pub scale: f32,
     pub offset: u32,
@@ -427,7 +465,7 @@ impl VertexBufferAttribute {
         let location_ptr = reader.read_u32::<LittleEndian>()?;
         let memory_area = reader.read_u32::<LittleEndian>()?;
         
-        let format = reader.read_u32::<LittleEndian>()?;
+        let format = GlDataType::read(reader)?;
         let elements = reader.read_u32::<LittleEndian>()?;
         let scale = reader.read_f32::<LittleEndian>()?;
         let offset = reader.read_u32::<LittleEndian>()?;
@@ -458,6 +496,20 @@ impl CgfxCollectionValue for VertexBufferAttribute {
 
     fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
         self.to_writer(writer)
+    }
+}
+
+impl Deref for VertexBufferAttribute {
+    type Target = VertexBufferCommon;
+
+    fn deref(&self) -> &Self::Target {
+        &self.vertex_buffer_common
+    }
+}
+
+impl DerefMut for VertexBufferAttribute {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.vertex_buffer_common
     }
 }
 
@@ -502,17 +554,6 @@ impl VertexBufferInterleaved {
             attributes,
         })
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, BinRead, BinWrite)]
-#[brw(little, repr = u32)]
-pub enum GlDataType {
-    Byte = 0x1400,
-    UByte = 0x1401,
-    Short = 0x1402,
-    UShort = 0x1403,
-    Float = 0x1406,
-    Fixed = 0x140C,
 }
 
 #[derive(Clone, Debug)]

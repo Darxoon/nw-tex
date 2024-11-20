@@ -102,7 +102,6 @@ pub fn read_pointer_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>) -> 
 pub fn read_pointer_list_magic<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>, magic: Option<u32>) -> Result<Option<Vec<T>>> {
     let count = reader.read_u32::<LittleEndian>()?;
     let list_ptr = Pointer::read_relative(reader)?;
-    println!("a {:?}", list_ptr);
     
     let values: Option<Vec<T>> = if let Some(list_ptr) = list_ptr {
         scoped_reader_pos!(reader);

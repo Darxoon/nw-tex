@@ -1,5 +1,7 @@
 use std::{
-    ffi::OsStr, fs, panic, path::{Path, PathBuf}
+    ffi::OsStr,
+    fs, panic,
+    path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Error, Result};
@@ -7,7 +9,9 @@ use clap::{ArgAction, Parser, ValueEnum};
 use compression_cache::{CachedFile, CompressionCache};
 use nw_tex::{
     bcres::{
-        bcres::CgfxContainer, image_codec::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS}, texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat}
+        bcres::CgfxContainer,
+        image_codec::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS},
+        texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat},
     },
     util::blz::{blz_decode, blz_encode},
     ArchiveRegistry, RegistryItem,
@@ -370,17 +374,11 @@ fn main() -> Result<()> {
     }
     
     let input = Path::new(&args.input).to_owned();
-    // let output = args.output;
-    // let asset_format = args.asset_format.unwrap_or(AssetFormat::Bcrez);
+    let output = args.output;
+    let asset_format = args.asset_format.unwrap_or(AssetFormat::Bcrez);
     
-    let input_file = fs::read(input)?;
-    let bcres = CgfxContainer::new(&input_file)?;
-    println!("{:#?}", bcres.models);
-    
-    return Ok(());
-    
-    // match args.method {
-    //     Method::Extract => extract(input, output, args.clean, asset_format),
-    //     Method::Rebuild => rebuild(input, output, asset_format),
-    // }
+    match args.method {
+        Method::Extract => extract(input, output, args.clean, asset_format),
+        Method::Rebuild => rebuild(input, output, asset_format),
+    }
 }

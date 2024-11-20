@@ -1,18 +1,28 @@
-use std::{io::{Cursor, Seek, SeekFrom}, ops::{Deref, DerefMut}, slice::from_raw_parts};
+use std::{
+    io::{Cursor, Seek, SeekFrom},
+    ops::{Deref, DerefMut},
+    slice::from_raw_parts,
+};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::{scoped_reader_pos, util::{
-    math::{Matrix3x3, SerializableMatrix, Vec3, Vec4},
-    pointer::Pointer,
-}};
+use crate::{
+    scoped_reader_pos,
+    util::{
+        math::{Matrix3x3, SerializableMatrix, Vec3, Vec4},
+        pointer::Pointer,
+    },
+};
 
 use super::{
     bcres::{CgfxCollectionValue, CgfxDict, WriteContext},
     image_codec::RgbaColor,
-    util::{read_inline_list, read_pointer_list, read_pointer_list_magic, CgfxNodeHeader, CgfxObjectHeader, CgfxTransform},
+    util::{
+        read_inline_list, read_pointer_list, read_pointer_list_magic, CgfxNodeHeader,
+        CgfxObjectHeader, CgfxTransform,
+    },
 };
 
 #[derive(Debug, Clone)]

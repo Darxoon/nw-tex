@@ -1,9 +1,18 @@
-use std::{fmt::Write, io::{Cursor, Seek, SeekFrom}};
+use std::{
+    fmt::Write,
+    io::{Cursor, Seek, SeekFrom},
+};
 
 use anyhow::Result;
 use binrw::BinRead;
 use na::Vec3;
-use nw_tex::{bcres::model::{AttributeName, CgfxModelCommon, Face, FaceDescriptor, GlDataType, SubMesh, VertexBuffer, VertexBufferAttribute}, util::math};
+use nw_tex::{
+    bcres::model::{
+        AttributeName, CgfxModelCommon, Face, FaceDescriptor, GlDataType, SubMesh, VertexBuffer,
+        VertexBufferAttribute,
+    },
+    util::math,
+};
 
 #[allow(unused)]
 pub fn export_bcres_to_obj(common: &CgfxModelCommon) -> Result<String> {

@@ -78,7 +78,7 @@ pub fn to_png(image_buffer: &[RgbaColor], width: u32, height: u32) -> Result<Vec
             (0.31270, 0.32900),
             (0.64000, 0.33000),
             (0.30000, 0.60000),
-            (0.15000, 0.06000)
+            (0.15000, 0.06000),
         );
         encoder.set_source_chromaticities(source_chromaticities);
         let mut writer = encoder.write_header().unwrap();
@@ -141,8 +141,8 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let raw = u16::from_le_bytes(image_buffer[input_offset..input_offset + 2].try_into().unwrap());
                         
                         let r: u8 = ((raw >> 12) & 0xf).try_into()?;
-                        let g: u8 = ((raw >>  8) & 0xf).try_into()?;
-                        let b: u8 = ((raw >>  4) & 0xf).try_into()?;
+                        let g: u8 = ((raw >> 8) & 0xf).try_into()?;
+                        let b: u8 = ((raw >> 4) & 0xf).try_into()?;
                         let a: u8 = (raw & 0xf).try_into()?;
                         
                         output[output_offset] = RgbaColor {
@@ -156,8 +156,8 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let raw = u16::from_le_bytes(image_buffer[input_offset..input_offset + 2].try_into().unwrap());
                         
                         let r: u8 = (((raw >> 11) & 0x1f) << 3).try_into()?;
-                        let g: u8 = (((raw >>  5) & 0x3f) << 2).try_into()?;
-                        let b: u8 = (((raw >>  0) & 0x1f) << 3).try_into()?;
+                        let g: u8 = (((raw >> 5) & 0x3f) << 2).try_into()?;
+                        let b: u8 = (((raw >> 0) & 0x1f) << 3).try_into()?;
                         
                         output[output_offset] = RgbaColor {
                             r: r | (r >> 5),
@@ -170,8 +170,8 @@ pub fn decode_swizzled_buffer(image_buffer: &[u8], input_format: PicaTextureForm
                         let raw = u16::from_le_bytes(image_buffer[input_offset..input_offset + 2].try_into().unwrap());
                         
                         let r: u8 = (((raw >> 11) & 0x1f) << 3).try_into()?;
-                        let g: u8 = (((raw >>  6) & 0x1f) << 3).try_into()?;
-                        let b: u8 = (((raw >>  1) & 0x1f) << 3).try_into()?;
+                        let g: u8 = (((raw >> 6) & 0x1f) << 3).try_into()?;
+                        let b: u8 = (((raw >> 1) & 0x1f) << 3).try_into()?;
                         let a: u8 = ((raw & 1) * 0xFF).try_into()?;
                         
                         output[output_offset] = RgbaColor {
@@ -253,7 +253,7 @@ fn decode_etc1(image_buffer: &[u8], width: u32, height: u32, use_alpha: bool) ->
             
             // iterate over every 4x4px block in this chunk
             for (sub_x, sub_y) in ETC1_X.into_iter().zip(ETC1_Y) {
-                let alpha_block = if use_alpha { 
+                let alpha_block = if use_alpha {
                     input_reader.read_u64::<LittleEndian>()?
                 } else {
                     u64::MAX
@@ -397,6 +397,6 @@ fn decode_etc1_pixel(base_color: RgbaColor, x: u32, y: u32, block_big_endian: u3
         r: saturate(base_color.r as i32 + pixel),
         g: saturate(base_color.g as i32 + pixel),
         b: saturate(base_color.b as i32 + pixel),
-        a: 0xFF
+        a: 0xFF,
     })
 }

@@ -1,13 +1,19 @@
-use std::{fmt::Debug, io::{Cursor, Read, Seek, SeekFrom}};
+use std::{
+    fmt::Debug,
+    io::{Cursor, Read, Seek, SeekFrom},
+};
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{scoped_reader_pos, util::pointer::Pointer};
 
-use super::{bcres::{CgfxCollectionValue, WriteContext}, util::{brw_relative_pointer, CgfxObjectHeader}};
+use super::{
+    bcres::{CgfxCollectionValue, WriteContext},
+    util::{brw_relative_pointer, CgfxObjectHeader},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, BinRead, BinWrite, Serialize, Deserialize)]
 #[brw(repr(u32), little)]

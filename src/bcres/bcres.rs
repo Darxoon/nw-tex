@@ -1,10 +1,16 @@
-use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}, str::from_utf8};
+use std::{
+    collections::HashMap,
+    io::{Cursor, Read, Seek, SeekFrom, Write},
+    str::from_utf8,
+};
 
 use anyhow::Result;
 use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-use crate::{assert_matching, get_4_byte_string, scoped_reader_pos, util::pointer::Pointer, write_at_pointer};
+use crate::{
+    assert_matching, get_4_byte_string, scoped_reader_pos, util::pointer::Pointer, write_at_pointer,
+};
 
 use super::{model::CgfxModel, texture::CgfxTexture};
 
@@ -73,7 +79,7 @@ impl WriteContext {
     }
 }
 
-pub trait CgfxCollectionValue : Sized {
+pub trait CgfxCollectionValue: Sized {
     // TODO: migrate this to use impl Read + Seek instead of Cursor
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self>;
     fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, ctx: &mut WriteContext) -> Result<()>;
@@ -232,7 +238,6 @@ impl<T: CgfxCollectionValue> CgfxDict<T> {
             }
         }
         
-        
         Ok(())
     }
 }
@@ -347,7 +352,7 @@ impl CgfxContainer {
         })
     }
     
-    pub fn to_buffer(&self)  -> Result<Vec<u8>> {
+    pub fn to_buffer(&self) -> Result<Vec<u8>> {
         self.to_buffer_debug(None)
     }
     

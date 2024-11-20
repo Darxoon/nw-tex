@@ -4,12 +4,13 @@ use std::{
 
 use anyhow::{anyhow, Error, Result};
 use binrw::{docs::attribute, BinRead};
+use byteorder::ReadBytesExt;
 use clap::{ArgAction, Parser, ValueEnum};
 use compression_cache::{CachedFile, CompressionCache};
 use na::Vec3;
 use nw_tex::{
     bcres::{
-        bcres::CgfxContainer, image_codec::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS}, model::{AttributeName, CgfxModel, CgfxModelCommon, GlDataType, VertexBuffer, VertexBufferAttribute}, texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat}
+        bcres::CgfxContainer, image_codec::{decode_swizzled_buffer, to_png, ENCODABLE_FORMATS}, model::{AttributeName, CgfxModel, CgfxModelCommon, Face, FaceDescriptor, GlDataType, SubMesh, VertexBuffer, VertexBufferAttribute}, texture::{CgfxTexture, CgfxTextureCommon, PicaTextureFormat}
     },
     util::{blz::{blz_decode, blz_encode}, math},
     ArchiveRegistry, RegistryItem,
@@ -359,36 +360,17 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
     Ok(())
 }
 
-fn get_vertex_pos(reader: &mut Cursor<&[u8]>, attributes: &[VertexBufferAttribute], all_vertices: &mut Vec<Vec3>) -> Result<Vec3> {
-    let mut result: Option<Vec3> = None;
-    
-    for attr in attributes {
-        if attr.attribute_name == AttributeName::Position {
-            assert!(attr.elements == 3 && attr.format == GlDataType::Float);
-            let pos: Vec3 = math::Vec3::read(reader)?.to_na() * attr.scale;
-            
-            if !all_vertices.contains(&pos) {
-                all_vertices.push(pos);
-            }
-            
-            result = Some(pos);
-        } else {
-            reader.seek(SeekFrom::Current((attr.format.byte_size() * attr.elements) as i64))?;
-        }
-    }
-    
-    Ok(result.unwrap())
-}
-
 fn do_model(common: &CgfxModelCommon) -> Result<()> {
     let shapes = common.shapes.as_ref().unwrap();
     let mut all_vertices: Vec<Vec3> = Vec::new();
     let mut all_faces: Vec<Vec<[u32; 3]>> = Vec::new();
     
-    for (i, shape) in shapes.iter().enumerate() {
-        println!("{}", i);
+    for shape in shapes {
         let vertex_buffers = shape.vertex_buffers.as_ref().unwrap();
+        let mut current_vertices: Vec<Vec3> = Vec::new();
+        let mut current_faces: Vec<[u32; 3]> = Vec::new();
         
+        // collect all vertices
         for vb in vertex_buffers {
             match vb {
                 VertexBuffer::Attribute(attribute) => {
@@ -399,6 +381,8 @@ fn do_model(common: &CgfxModelCommon) -> Result<()> {
                         
                         for _ in 0..raw_bytes.len() / attribute.elements as usize {
                             let pos: Vec3 = math::Vec3::read(&mut reader)?.to_na() * attribute.scale;
+                            
+                            current_vertices.push(pos);
                             
                             if !all_vertices.contains(&pos) {
                                 all_vertices.push(pos);
@@ -424,27 +408,66 @@ fn do_model(common: &CgfxModelCommon) -> Result<()> {
                         .sum();
                     let vertex_count = raw_bytes.len() / vertex_byte_size as usize;
                     
-                    assert!(vertex_count % 3 == 0);
-                    
-                    let mut current_faces: Vec<[u32; 3]> = Vec::new();
-                    
-                    for _ in 0..vertex_count / 3 {
-                        let a = get_vertex_pos(&mut reader, attributes, &mut all_vertices)?;
-                        let b = get_vertex_pos(&mut reader, attributes, &mut all_vertices)?;
-                        let c = get_vertex_pos(&mut reader, attributes, &mut all_vertices)?;
-                        
-                        let a_index = all_vertices.iter().position(|v| *v == a).unwrap();
-                        let b_index = all_vertices.iter().position(|v| *v == b).unwrap();
-                        let c_index = all_vertices.iter().position(|v| *v == c).unwrap();
-                        current_faces.push([a_index as u32, b_index as u32, c_index as u32]);
+                    for _ in 0..vertex_count {
+                        for attr in attributes {
+                            if attr.attribute_name == AttributeName::Position {
+                                assert!(attr.elements == 3 && attr.format == GlDataType::Float);
+                                let pos: Vec3 = math::Vec3::read(&mut reader)?.to_na() * attr.scale;
+                                
+                                current_vertices.push(pos);
+                                
+                                if !all_vertices.contains(&pos) {
+                                    all_vertices.push(pos);
+                                }
+                            } else {
+                                reader.seek(SeekFrom::Current((attr.format.byte_size() * attr.elements) as i64))?;
+                            }
+                        }
                     }
-                    
-                    all_faces.push(current_faces);
                 },
                 // it doesn't make sense for Position to be fixed so this is just ignored
                 VertexBuffer::Fixed(_) => (),
             }
         }
+        
+        // collect all faces
+        let sub_meshes: &[SubMesh] = shape.sub_meshes.as_ref().unwrap();
+        
+        for sub_mesh in sub_meshes {
+            let gfx_faces: &[Face] = sub_mesh.faces.as_ref().unwrap();
+            
+            for gfx_face in gfx_faces {
+                let face_descriptors: &[FaceDescriptor] = gfx_face.face_descriptors.as_ref().unwrap();
+                
+                for face_descriptor in face_descriptors {
+                    if face_descriptor.format != GlDataType::Byte && face_descriptor.format != GlDataType::UByte {
+                        println!("Skipping face descriptor for now (16-bit indices)");
+                        // TODO
+                        continue;
+                    }
+                    
+                    let raw_buffer: &[u8] = face_descriptor.raw_buffer.as_ref().unwrap();
+                    assert!(raw_buffer.len() % 3 == 0);
+                    
+                    let mut reader = Cursor::new(raw_buffer);
+                    
+                    for _ in 0..raw_buffer.len() / 3 {
+                        let a: Vec3 = current_vertices[reader.read_u8()? as usize];
+                        let a_index = all_vertices.iter().position(|v: &Vec3| *v == a).unwrap();
+                        
+                        let b: Vec3 = current_vertices[reader.read_u8()? as usize];
+                        let b_index = all_vertices.iter().position(|v: &Vec3| *v == b).unwrap();
+                        
+                        let c: Vec3 = current_vertices[reader.read_u8()? as usize];
+                        let c_index = all_vertices.iter().position(|v: &Vec3| *v == c).unwrap();
+                        
+                        current_faces.push([a_index as u32, b_index as u32, c_index as u32]);
+                    }
+                }
+            }
+        }
+        
+        all_faces.push(current_faces);
     }
     
     for vertex in &all_vertices {
@@ -455,7 +478,7 @@ fn do_model(common: &CgfxModelCommon) -> Result<()> {
         println!("\no mesh{}", i);
         
         for [a, b, c] in current_faces {
-            println!("v {} {} {}", a + 1, b + 1, c + 1);
+            println!("f {} {} {}", a + 1, b + 1, c + 1);
         }
     }
     

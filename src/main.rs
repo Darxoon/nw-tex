@@ -130,13 +130,13 @@ fn get_input_sibling_path(input: &Path, old_file_ending: &str, new_file_ending: 
     Ok(path_buf)
 }
 
-fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<(Vec<u8>, PicaTextureFormat)> {
+fn bcres_buffer_into_png(bcres_buffer: &[u8], id: &str) -> Result<(Vec<u8>, PicaTextureFormat)> {
     let gfx = CgfxContainer::new(bcres_buffer)?;
     
     assert!(gfx.textures.is_some(), "Texture archive bcres file has to contain a texture section");
     
-    let textures = gfx.textures.unwrap();
-    let texture_node = textures.nodes.iter()
+    let textures = gfx.textures.as_ref().unwrap();
+    let texture_node: &nw_tex::bcres::bcres::CgfxNode<CgfxTexture> = textures.nodes.iter()
         .find(|node| node.value.is_some())
         .expect("Texture archive bcres file has to contain at least one texture");
     
@@ -144,6 +144,21 @@ fn bcres_buffer_into_png(bcres_buffer: &[u8]) -> Result<(Vec<u8>, PicaTextureFor
         CgfxTexture::Image(common, image) => (common, image.as_ref().unwrap()),
         other => panic!("Unsupported texture type {:?}, expected Image", other),
     };
+    
+    // debug
+    let recreation = CgfxContainer::from_single_texture(
+        id.to_string(),
+        textures.nodes[1].reference_bit,
+        texture_node.value.as_ref().unwrap().clone());
+    let texturesA = gfx.textures.as_ref().unwrap();
+    let texturesB = recreation.textures.as_ref().unwrap();
+    
+    let serialized = recreation.to_buffer_debug(None)?;
+    fs::write("testing/serialized/".to_string() + id + ".bcres", &serialized)?;
+    
+    if serialized != &bcres_buffer[..gfx.header.file_length as usize] {
+        println!("Aaaa {}", id);
+    }
     
     let CgfxTextureCommon { texture_format, width, height, .. } = *common;
     let decoded = decode_swizzled_buffer(&image.image_bytes, texture_format, width, height)?;
@@ -197,7 +212,7 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
     
     // write output files
     if clean_out_dir && output_dir_name.is_dir() {
-        fs::remove_dir_all(&output_dir_name)?;
+        // fs::remove_dir_all(&output_dir_name)?;
     }
     
     fs::create_dir_all(&output_dir_name)?;
@@ -237,7 +252,7 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
             });
             
             if asset_format == AssetFormat::Png {
-                let (buf, texture_format) = bcres_buffer_into_png(&decompressed)?;
+                let (buf, texture_format) = bcres_buffer_into_png(&decompressed, &item.id)?;
                 let readonly = !ENCODABLE_FORMATS.contains(&texture_format);
                 item.image_format = Some(texture_format);
                 item.is_readonly = if readonly { Some(readonly) } else { None };
@@ -251,7 +266,7 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
         }
         
         let file_name = output_dir_name.join(filename + resource_file_extension);
-        fs::write(file_name, to_write)?;
+        // fs::write(file_name, to_write)?;
     }
     
     fs::write(&output_file_name, registry.to_yaml()?)?;
@@ -264,12 +279,6 @@ file with the same name but ending on '_info.bin' rather than '.bin'", secondary
 }
 
 fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat) -> Result<()> {
-    if asset_format == AssetFormat::Png {
-        return Err(anyhow!("Asset format .png not supported during rebuilding yet!"));
-    }
-    
-    let compress = asset_format == AssetFormat::Bcres;
-    
     // get adjacent input folder
     let input_folder_name = input.with_extension("");
     let input_cache_name = input.with_extension("cache");
@@ -295,7 +304,7 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
     let mut registry = ArchiveRegistry::from_yaml(&input_string)?;
     
     // read compression cache
-    let compression_cache = if compress {
+    let compression_cache = if asset_format != AssetFormat::Bcrez {
         let buffer = fs::read(input_cache_name)
             .map_err(|_| Error::msg(
                 "Cache file could not be read, make sure it exists and can be accessed.\n\
@@ -309,7 +318,11 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
     };
     
     // read files to be written in archive
-    let file_extension = if compress { "bcres" } else { "bcrez" };
+    let file_extension = match asset_format {
+        AssetFormat::Bcrez => "bcrez",
+        AssetFormat::Bcres => "bcres",
+        AssetFormat::Png => "png",
+    };
     
     let read_bcrez = |item: &RegistryItem| {
         let input_path = input_folder_name.join(&item.id).with_extension(file_extension);
@@ -318,10 +331,14 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
             .map_err(|_| Error::msg(format!(
                 "File {:?} could not be read. Make sure that the file exists and can be accessed.\n\
                 If you used --asset-format {} during extraction, specify the same command line option during rebuilding too.",
-                &input_path, if compress { "bcrez" } else { "bcres" }
+                &input_path, match asset_format {
+                    AssetFormat::Bcrez => "bcres or png",
+                    AssetFormat::Bcres => "bcrez or png",
+                    AssetFormat::Png => "bcrez or bcres",
+                },
             )))?;
         
-        if compress {
+        if asset_format != AssetFormat::Bcrez {
             let cache_item = compression_cache.as_ref().unwrap().files.iter()
                 .find(|file| file.name == item.id)
                 .unwrap();
@@ -332,7 +349,11 @@ fn rebuild(input: PathBuf, opt_output: Option<String>, asset_format: AssetFormat
                 Ok(cache_item.compressed_content.clone())
             } else {
                 println!("Encoding {:?}", item.id);
-                blz_encode(&mut buffer)
+                match asset_format {
+                    AssetFormat::Bcres => blz_encode(&mut buffer),
+                    AssetFormat::Png => todo!(),
+                    _ => panic!(),
+                }
             }
         } else {
             Ok(buffer)

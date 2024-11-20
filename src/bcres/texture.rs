@@ -92,7 +92,7 @@ impl Debug for ImageData {
     }
 }
 
-#[derive(Debug, BinRead, BinWrite)]
+#[derive(Debug, Clone, BinRead, BinWrite, PartialEq)]
 #[brw(little)]
 pub struct CgfxTextureCommon {
     // cgfx object header
@@ -109,7 +109,7 @@ pub struct CgfxTextureCommon {
     pub texture_format: PicaTextureFormat,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CgfxTexture {
     Cube(CgfxTextureCommon, Vec<ImageData>),
     Image(CgfxTextureCommon, Option<ImageData>),
@@ -206,6 +206,34 @@ impl CgfxTexture {
         }
         
         Ok(())
+    }
+    
+    pub fn metadata(&self) -> &CgfxTextureCommon {
+        match self {
+            CgfxTexture::Image(common, _) => common,
+            CgfxTexture::Cube(common, _) => common,
+        }
+    }
+    
+    pub fn metadata_mut(&mut self) -> &mut CgfxTextureCommon {
+        match self {
+            CgfxTexture::Image(common, _) => common,
+            CgfxTexture::Cube(common, _) => common,
+        }
+    }
+    
+    pub fn size(&self) -> u32 {
+        match self {
+            CgfxTexture::Image(_, image_data) => {
+                if let Some(image_data) = image_data {
+                    image_data.image_bytes.len().try_into().unwrap()
+                } else {
+                    0
+                }
+            },
+            CgfxTexture::Cube(_, vec) =>
+                vec.iter().map(|image| image.image_bytes.len() as u32).sum(),
+        }
     }
 }
 

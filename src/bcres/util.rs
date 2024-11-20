@@ -154,7 +154,7 @@ pub fn read_inline_list<T: CgfxCollectionValue>(reader: &mut Cursor<&[u8]>) -> R
     Ok(values)
 }
 
-#[derive(Debug, Clone, BinRead, BinWrite)]
+#[derive(Debug, Clone, PartialEq, BinRead, BinWrite)]
 // vvv required because brw_write_4_byte_string might panic otherwise
 #[brw(assert(magic.bytes().len() == 4, "Length of magic number {:?} must be 4 bytes", magic))]
 #[br(assert(metadata_pointer == None, "CgfxTexture {:?} has metadata {:?}", name, metadata_pointer))]
@@ -175,7 +175,7 @@ pub struct CgfxObjectHeader {
     pub metadata_pointer: Option<Pointer>,
 }
 
-#[derive(Debug, Clone, BinRead, BinWrite)]
+#[derive(Debug, Clone, PartialEq, BinRead, BinWrite)]
 #[brw(little)]
 pub struct CgfxNodeHeader {
     pub branch_visible: u32,

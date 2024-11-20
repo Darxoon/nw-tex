@@ -7,7 +7,7 @@ use png::{BitDepth, ColorType, Encoder, ScaledFloat, SourceChromaticities};
 
 use super::texture::PicaTextureFormat;
 
-#[derive(Clone, Copy, Default, Debug, BinRead, BinWrite)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
 #[repr(C)]
 pub struct RgbaColor {

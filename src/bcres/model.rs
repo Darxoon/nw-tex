@@ -25,7 +25,7 @@ use super::{
     },
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CgfxModelCommon {
     // header stuff
     pub cgfx_object_header: CgfxObjectHeader,
@@ -43,7 +43,7 @@ pub struct CgfxModelCommon {
     pub layer_id: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CgfxModel {
     Standard(CgfxModelCommon),
     Skeletal(CgfxModelCommon, ()),
@@ -145,7 +145,7 @@ impl CgfxCollectionValue for CgfxModel {
     }
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
+#[derive(Clone, Debug, PartialEq, BinRead, BinWrite)]
 #[brw(little, magic = 0x01000000u32)]
 pub struct Mesh {
     // object header
@@ -166,7 +166,7 @@ pub struct Mesh {
     // ...
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
+#[derive(Clone, Debug, PartialEq, BinRead, BinWrite)]
 #[brw(little, magic = 0x8000000u32)]
 pub struct Material {
     pub cgfx_object_header: CgfxObjectHeader,
@@ -179,7 +179,7 @@ pub struct Material {
     // ...
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
+#[derive(Clone, Debug, PartialEq, BinRead, BinWrite)]
 #[brw(little)]
 pub struct MaterialColors {
     pub emission_float: Vec4,
@@ -209,7 +209,7 @@ pub struct MaterialColors {
     pub command_cache: u32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Shape {
     // object header
     pub cgfx_object_header: CgfxObjectHeader,
@@ -275,7 +275,7 @@ impl CgfxCollectionValue for Shape {
     }
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
+#[derive(Clone, Debug, PartialEq, BinRead, BinWrite)]
 #[brw(little)]
 pub struct BoundingBox {
     pub flags: u32,
@@ -286,7 +286,7 @@ pub struct BoundingBox {
     pub size: Vec3,
 }
 
-#[derive(Clone, Copy, Debug, BinRead, BinWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(repr = u32, little)]
 pub enum SubMeshSkinning {
     None,
@@ -294,7 +294,7 @@ pub enum SubMeshSkinning {
     Smooth,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubMesh {
     pub bone_indices: Option<Vec<u32>>,
     pub skinning: SubMeshSkinning,
@@ -344,7 +344,7 @@ impl CgfxCollectionValue for SubMesh {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Face {
     pub face_descriptors: Option<Vec<FaceDescriptor>>,
     pub buffer_objs: Option<Vec<u32>>,
@@ -382,7 +382,7 @@ impl CgfxCollectionValue for Face {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FaceDescriptor {
     pub format: GlDataType,
     pub primitive_mode: u8, // TODO: make this an enum
@@ -457,7 +457,7 @@ impl CgfxCollectionValue for FaceDescriptor {
     }
 }
 
-#[derive(Clone, Debug, BinRead, BinWrite)]
+#[derive(Clone, Debug, PartialEq, Eq, BinRead, BinWrite)]
 #[brw(little)]
 pub struct VertexBufferCommon {
     pub attribute_name: AttributeName,
@@ -524,7 +524,7 @@ pub enum VertexBufferType {
     Interleaved,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum VertexBuffer {
     Attribute(VertexBufferAttribute),
     Interleaved(VertexBufferInterleaved),
@@ -560,7 +560,7 @@ impl CgfxCollectionValue for VertexBuffer {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VertexBufferAttribute {
     pub vertex_buffer_common: VertexBufferCommon,
     
@@ -637,7 +637,7 @@ impl DerefMut for VertexBufferAttribute {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VertexBufferInterleaved {
     pub vertex_buffer_common: VertexBufferCommon,
     
@@ -680,7 +680,7 @@ impl VertexBufferInterleaved {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VertexBufferFixed {
     pub vertex_buffer_common: VertexBufferCommon,
     

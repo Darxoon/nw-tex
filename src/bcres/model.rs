@@ -287,7 +287,7 @@ pub enum SubMeshSkinning {
 pub struct SubMesh {
     pub bone_indices: Option<Vec<u32>>,
     pub skinning: SubMeshSkinning,
-    pub faces: Option<Vec<()>>, // TODO: implement
+    pub faces: Option<Vec<Face>>,
 }
 
 impl SubMesh {
@@ -309,7 +309,7 @@ impl SubMesh {
         };
         
         let skinning: SubMeshSkinning = SubMeshSkinning::read(reader)?;
-        let faces: Option<Vec<()>> = read_pointer_list(reader)?;
+        let faces: Option<Vec<Face>> = read_pointer_list(reader)?;
 
         Ok(Self {
             bone_indices,
@@ -324,6 +324,101 @@ impl SubMesh {
 }
 
 impl CgfxCollectionValue for SubMesh {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Face {
+    pub face_descriptors: Option<Vec<FaceDescriptor>>,
+    pub buffer_objs: Option<Vec<u32>>,
+    pub flags: u32,
+    pub command_alloc: u32,
+}
+
+impl Face {
+    pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let face_descriptors: Option<Vec<FaceDescriptor>> = read_pointer_list(reader)?;
+        let buffer_objs: Option<Vec<u32>> = read_inline_list(reader)?;
+        let flags = reader.read_u32::<LittleEndian>()?;
+        let command_alloc = reader.read_u32::<LittleEndian>()?;
+        
+        Ok(Self {
+            face_descriptors,
+            buffer_objs,
+            flags,
+            command_alloc,
+        })
+    }
+    
+    pub fn to_writer(&self, _: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+}
+
+impl CgfxCollectionValue for Face {
+    fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        Self::from_reader(reader)
+    }
+
+    fn write_dict_value(&self, writer: &mut Cursor<&mut Vec<u8>>, _: &mut WriteContext) -> Result<()> {
+        self.to_writer(writer)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FaceDescriptor {
+    pub format: GlDataType,
+    pub primitive_mode: u8, // TODO: make this an enum
+    pub visible: u8,
+    
+    pub raw_buffer: Option<Vec<u8>>, // TODO: implement speial case for format == Short or UShort
+    
+    // more fields
+    
+    pub bounding_volume: u32,
+}
+
+impl FaceDescriptor {
+    pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
+        let format = GlDataType::read(reader)?;
+        assert!(format == GlDataType::Byte || format == GlDataType::UByte
+            || format == GlDataType::Short || format == GlDataType::UShort);
+        
+        let primitive_mode = reader.read_u8()?;
+        
+        let visible = reader.read_u8()?;
+        
+        reader.seek(SeekFrom::Current(2))?;
+        
+        let raw_buffer: Option<Vec<u8>> = read_inline_list(reader)?;
+        
+        // skip 6 32-bit integers (fields aren't relevant here)
+        // TODO: they will be necessary for serializing though
+        reader.seek(SeekFrom::Current(6 * 4))?;
+        
+        let bounding_volume = reader.read_u32::<LittleEndian>()?;
+        
+        Ok(Self {
+            format,
+            primitive_mode,
+            visible,
+            raw_buffer,
+            bounding_volume,
+        })
+    }
+    
+    pub fn to_writer(&self, _: &mut Cursor<&mut Vec<u8>>) -> Result<()> {
+        todo!()
+    }
+}
+
+impl CgfxCollectionValue for FaceDescriptor {
     fn read_dict_value(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         Self::from_reader(reader)
     }

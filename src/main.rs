@@ -440,25 +440,19 @@ fn do_model(common: &CgfxModelCommon) -> Result<()> {
                 let face_descriptors: &[FaceDescriptor] = gfx_face.face_descriptors.as_ref().unwrap();
                 
                 for face_descriptor in face_descriptors {
-                    if face_descriptor.format != GlDataType::Byte && face_descriptor.format != GlDataType::UByte {
-                        println!("Skipping face descriptor for now (16-bit indices)");
-                        // TODO
-                        continue;
-                    }
+                    let indices: &[u16] = face_descriptor.indices.as_ref().unwrap();
+                    assert!(indices.len() % 3 == 0);
                     
-                    let raw_buffer: &[u8] = face_descriptor.raw_buffer.as_ref().unwrap();
-                    assert!(raw_buffer.len() % 3 == 0);
+                    let mut reader = indices.iter();
                     
-                    let mut reader = Cursor::new(raw_buffer);
-                    
-                    for _ in 0..raw_buffer.len() / 3 {
-                        let a: Vec3 = current_vertices[reader.read_u8()? as usize];
+                    for _ in 0..indices.len() / 3 {
+                        let a: Vec3 = current_vertices[*reader.next().unwrap() as usize];
                         let a_index = all_vertices.iter().position(|v: &Vec3| *v == a).unwrap();
                         
-                        let b: Vec3 = current_vertices[reader.read_u8()? as usize];
+                        let b: Vec3 = current_vertices[*reader.next().unwrap()  as usize];
                         let b_index = all_vertices.iter().position(|v: &Vec3| *v == b).unwrap();
                         
-                        let c: Vec3 = current_vertices[reader.read_u8()? as usize];
+                        let c: Vec3 = current_vertices[*reader.next().unwrap()  as usize];
                         let c_index = all_vertices.iter().position(|v: &Vec3| *v == c).unwrap();
                         
                         current_faces.push([a_index as u32, b_index as u32, c_index as u32]);
@@ -502,18 +496,18 @@ fn main() -> Result<()> {
     
     let input_file = fs::read(input)?;
     let bcres = CgfxContainer::new(&input_file)?;
-    println!("{:#?}", bcres.models);
+    // println!("{:#?}", bcres.models);
     
-    // if let Some(models) = bcres.models {
-    //     for node in models.nodes {
-    //         if let Some(model) = node.value {
-    //             let common = model.common();
-    //             println!("{}", common.cgfx_object_header.name.as_ref().unwrap());
+    if let Some(models) = bcres.models {
+        for node in models.nodes {
+            if let Some(model) = node.value {
+                let common = model.common();
+                println!("{}", common.cgfx_object_header.name.as_ref().unwrap());
                 
-    //             do_model(common)?;
-    //         }
-    //     }
-    // }
+                do_model(common)?;
+            }
+        }
+    }
     
     return Ok(());
     

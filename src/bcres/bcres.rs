@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}, str::from_utf8};
 
 use anyhow::Result;
-use binrw::{meta::{ReadEndian, WriteEndian}, BinRead, BinWrite};
+use binrw::{BinRead, BinWrite};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
 use crate::{assert_matching, get_4_byte_string, scoped_reader_pos, util::pointer::Pointer, write_at_pointer};
@@ -257,7 +257,6 @@ pub struct CgfxHeader {
 pub struct CgfxContainer {
     pub header: CgfxHeader,
     
-    // TODO: replace with actual Table struct when table parsing is done
     pub models: Option<CgfxDict<CgfxModel>>,
     pub textures: Option<CgfxDict<CgfxTexture>>,
     pub luts: Option<CgfxDict<()>>,

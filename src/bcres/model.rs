@@ -1,4 +1,4 @@
-use std::{io::{Cursor, Seek, SeekFrom}, ops::{Deref, DerefMut}};
+use std::{io::{Cursor, Seek, SeekFrom}, ops::{Deref, DerefMut}, slice::from_raw_parts};
 
 use anyhow::{anyhow, Result};
 use binrw::{BinRead, BinWrite};
@@ -233,6 +233,7 @@ impl Shape {
         };
         
         let position_offset = Vec3::read(reader)?;
+        assert!(position_offset == Vec3::default());
         
         let sub_meshes: Option<Vec<SubMesh>> = read_pointer_list(reader)?;
         let base_address = reader.read_u32::<LittleEndian>()?;
@@ -377,7 +378,7 @@ pub struct FaceDescriptor {
     pub primitive_mode: u8, // TODO: make this an enum
     pub visible: u8,
     
-    pub raw_buffer: Option<Vec<u8>>, // TODO: implement speial case for format == Short or UShort
+    pub indices: Option<Vec<u16>>, // TODO: implement speial case for format == Short or UShort
     
     // more fields
     
@@ -387,8 +388,7 @@ pub struct FaceDescriptor {
 impl FaceDescriptor {
     pub fn from_reader(reader: &mut Cursor<&[u8]>) -> Result<Self> {
         let format = GlDataType::read(reader)?;
-        assert!(format == GlDataType::Byte || format == GlDataType::UByte
-            || format == GlDataType::Short || format == GlDataType::UShort);
+        assert!(format.byte_size() == 1 || format.byte_size() == 2);
         
         let primitive_mode = reader.read_u8()?;
         
@@ -397,6 +397,25 @@ impl FaceDescriptor {
         reader.seek(SeekFrom::Current(2))?;
         
         let raw_buffer: Option<Vec<u8>> = read_inline_list(reader)?;
+        
+        let indices = if let Some(raw_buffer) = raw_buffer {
+            let indices: Vec<u16> = match format.byte_size() {
+                1 => raw_buffer.iter().map(|i| *i as u16).collect(),
+                2 => {
+                    assert!(raw_buffer.len() % 2 == 0);
+                    
+                    unsafe {
+                        let raw_buffer_pointer = (&raw_buffer[0] as *const u8) as *const u16;
+                        from_raw_parts(raw_buffer_pointer, raw_buffer.len() / 2).to_owned()
+                    }
+                },
+                _ => panic!("Invalid byte size"),
+            };
+            
+            Some(indices)
+        } else {
+            None
+        };
         
         // skip 6 32-bit integers (fields aren't relevant here)
         // TODO: they will be necessary for serializing though
@@ -408,7 +427,7 @@ impl FaceDescriptor {
             format,
             primitive_mode,
             visible,
-            raw_buffer,
+            indices,
             bounding_volume,
         })
     }

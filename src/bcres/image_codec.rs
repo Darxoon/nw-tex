@@ -46,6 +46,7 @@ impl RgbaColor {
     }
 }
 
+// TODO: verify that input length is divisible by 4
 pub fn colors_to_bytes(image_buffer: &[RgbaColor]) -> &[u8] {
     unsafe {
         let bytes_pointer = (&image_buffer[0] as *const RgbaColor) as *const u8;

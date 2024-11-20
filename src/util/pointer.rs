@@ -78,7 +78,6 @@ macro_rules! into_type_unwrap {
     };
 }
 
-// TODO: replace u32 with private NonZeroU32
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, BinRead, BinWrite)]
 pub struct Pointer(pub u32);
 

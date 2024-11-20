@@ -3,7 +3,7 @@ use std::io::{Read, Seek, Write};
 use binrw::{BinRead, BinResult, BinWrite, Endian};
 use na::{ArrayStorage, Const, Matrix, U3};
 
-#[derive(Clone, Copy, Debug, PartialEq, BinRead, BinWrite)]
+#[derive(Clone, Copy, Debug, PartialEq, Default, BinRead, BinWrite)]
 #[brw(little)]
 pub struct Vec3 {
     pub x: f32,
